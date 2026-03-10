@@ -22,10 +22,10 @@ export default function RootLayout({
   );
 
   return (
-    <html lang="en">
+    <html lang="ru">
       <head>
         <title>UpHunter</title>
-        <meta name="description" content="AI-powered Upwork job hunting platform" />
+        <meta name="description" content="AI-платформа для поиска работы на Upwork" />
       </head>
       <body className="font-sans antialiased text-gray-900">
         <QueryClientProvider client={queryClient}>

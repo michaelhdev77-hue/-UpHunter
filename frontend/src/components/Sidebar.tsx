@@ -2,17 +2,19 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Briefcase, Kanban, BarChart3, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, Briefcase, Kanban, BarChart3, Settings, LogOut, Users, Activity } from 'lucide-react';
 import { clsx } from 'clsx';
 import { removeToken } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
 
 const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/jobs', label: 'Jobs', icon: Briefcase },
-  { href: '/pipeline', label: 'Pipeline', icon: Kanban },
-  { href: '/analytics', label: 'Analytics', icon: BarChart3 },
-  { href: '/settings', label: 'Settings', icon: Settings },
+  { href: '/dashboard', label: 'Дашборд', icon: LayoutDashboard },
+  { href: '/jobs', label: 'Вакансии', icon: Briefcase },
+  { href: '/pipeline', label: 'Пайплайн', icon: Kanban },
+  { href: '/clients', label: 'Клиенты', icon: Users },
+  { href: '/analytics', label: 'Аналитика', icon: BarChart3 },
+  { href: '/system', label: 'Система', icon: Activity },
+  { href: '/settings', label: 'Настройки', icon: Settings },
 ];
 
 export default function Sidebar() {
@@ -57,7 +59,7 @@ export default function Sidebar() {
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors w-full"
         >
           <LogOut className="w-5 h-5" />
-          Sign out
+          Выйти
         </button>
       </div>
     </aside>
