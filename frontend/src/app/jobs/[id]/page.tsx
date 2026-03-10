@@ -545,6 +545,14 @@ export default function JobDetailPage() {
     onError: (e: Error) => { setScoreError(e?.message || 'Ошибка оценки'); setTimeout(() => setScoreError(null), 5000); },
   });
 
+  // Fetch detailed score with LLM reasoning (must be before early returns to satisfy React hooks rules)
+  const { data: scoreData } = useQuery({
+    queryKey: ['jobScore', jobId],
+    queryFn: () => getJobScore(jobId),
+    enabled: !!job && job.overall_score !== null,
+    retry: false,
+  });
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen">
@@ -575,14 +583,6 @@ export default function JobDetailPage() {
 
   const details = job.score_details;
   const clientRisk = details?.client_risk ?? null;
-
-  // Fetch detailed score with LLM reasoning
-  const { data: scoreData } = useQuery({
-    queryKey: ['jobScore', jobId],
-    queryFn: () => getJobScore(jobId),
-    enabled: job.overall_score !== null,
-    retry: false,
-  });
 
   return (
     <div className="flex min-h-screen">

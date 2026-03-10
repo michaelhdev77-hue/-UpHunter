@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { login } from '@/lib/api';
 import { setToken } from '@/lib/auth';
 
@@ -39,8 +40,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-lg p-8">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-brand-500">UpHunter</h1>
-            <p className="text-gray-500 mt-2">Войдите в аккаунт</p>
+            <Image src="/logo.png" alt="UpHunter" width={180} height={206} className="mx-auto" priority />
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
