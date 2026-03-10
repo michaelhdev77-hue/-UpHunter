@@ -52,9 +52,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(router, prefix="", tags=["jobs"])
-
-
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "jobs"}
+
+
+app.include_router(router, prefix="", tags=["jobs"])

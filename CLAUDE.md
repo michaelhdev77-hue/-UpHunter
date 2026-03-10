@@ -13,11 +13,12 @@ Monorepo: `services/`, `frontend/`.
 | letter-gen    | 8104 | letters_db  |
 | auth          | 8105 | auth_db     |
 | analytics     | 8106 | analytics_db|
-| nginx         | 8000 | —           |
+| nginx         | 8080 | —           |
 | frontend      | 3000 | —           |
 
 ## Infra
-PostgreSQL (port 5434), Redis (port 6380), Kafka (port 9093), nginx (port 8000).
+PostgreSQL (port 5438), Redis (port 6381), Kafka (port 9093), nginx (port 8080).
+Default login: admin@uphunter.local / admin
 
 ## Conventions
 - Python 3.12, FastAPI, SQLAlchemy 2.0 async, Pydantic v2

@@ -4,9 +4,9 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
+import bcrypt
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from passlib.context import CryptContext
 from sqlalchemy import select
 
 from app.db import engine, async_session
@@ -15,9 +15,6 @@ from app.routes import router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -31,7 +28,7 @@ async def lifespan(app: FastAPI):
             db.add(
                 User(
                     email="admin@uphunter.local",
-                    hashed_password=pwd_context.hash("admin"),
+                    hashed_password=bcrypt.hashpw(b"admin", bcrypt.gensalt()).decode(),
                     name="Admin",
                 )
             )

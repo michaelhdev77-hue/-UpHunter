@@ -1,4 +1,4 @@
-version: "3.8"
+# docker-compose.yml
 
 services:
   # ══════════════════════════════════════════════════════════════════════
@@ -9,7 +9,7 @@ services:
     image: postgres:16
     restart: unless-stopped
     ports:
-      - "5434:5432"
+      - "5438:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-uphunter}
       POSTGRES_USER: ${POSTGRES_USER:-uphunter}
@@ -27,7 +27,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6380:6379"
+      - "6381:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -60,13 +60,12 @@ services:
     image: nginx:alpine
     restart: unless-stopped
     ports:
-      - "8000:80"
+      - "8080:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - auth
       - jobs
-      - frontend
 
   # ══════════════════════════════════════════════════════════════════════
   #  BACKEND SERVICES
