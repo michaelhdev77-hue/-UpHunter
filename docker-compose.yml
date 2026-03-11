@@ -67,6 +67,57 @@ services:
       - auth
       - jobs
 
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    restart: unless-stopped
+    ports:
+      - "3003:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.55
+    restart: unless-stopped
+    ports:
+      - "16687:16686"  # UI
+      - "4319:4317"    # OTLP gRPC
+      - "4320:4318"    # OTLP HTTP
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-uphunter}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-uphunter123}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+
   # ══════════════════════════════════════════════════════════════════════
   #  BACKEND SERVICES
   # ══════════════════════════════════════════════════════════════════════
@@ -186,6 +237,12 @@ services:
       REDIS_URL: redis://redis:6379/0
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       KAFKA_ENABLED: ${KAFKA_ENABLED:-true}
+      JOBS_SERVICE_URL: http://jobs:8101
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      TELEGRAM_ENABLED: ${TELEGRAM_ENABLED:-false}
+      TELEGRAM_SCORE_THRESHOLD: ${TELEGRAM_SCORE_THRESHOLD:-70}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3002}
     depends_on:
       db:
         condition: service_healthy
@@ -200,12 +257,15 @@ services:
     build: ./frontend
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3002:3000"
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
     depends_on:
       - auth
       - jobs
 
 volumes:
   pgdata:
+  prometheus_data:
+  grafana_data:
+  minio_data:

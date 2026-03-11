@@ -305,11 +305,11 @@ export default function SystemPage() {
                 <p className="text-xs text-gray-500 mt-1">Метрики и алерты</p>
                 <p className="text-[10px] text-gray-400 mt-1 font-mono">:9090</p>
               </a>
-              <a href="http://localhost:16686" target="_blank" rel="noopener noreferrer"
+              <a href="http://localhost:16687" target="_blank" rel="noopener noreferrer"
                 className="bg-gray-50 rounded-lg p-4 text-center hover:bg-gray-100 transition-colors group">
                 <p className="text-sm font-semibold text-gray-900 group-hover:text-brand-600">Jaeger</p>
                 <p className="text-xs text-gray-500 mt-1">Распределённая трассировка</p>
-                <p className="text-[10px] text-gray-400 mt-1 font-mono">:16686</p>
+                <p className="text-[10px] text-gray-400 mt-1 font-mono">:16687</p>
               </a>
             </div>
           </div>
