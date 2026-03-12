@@ -62,12 +62,20 @@ async def poll_once(access_token: str | None = None):
             keywords = f.keywords if f else None
             skills = f.skills if f else None
             category = f.category if f else None
+            contract_type = f.contract_type.value if f and f.contract_type else None
+            experience_level = f.experience_level.value if f and f.experience_level else None
+            budget_min = f.budget_min if f else None
+            budget_max = f.budget_max if f else None
 
             try:
                 jobs = await client.search_jobs(
                     keywords=keywords,
                     skills=skills,
                     category=category,
+                    contract_type=contract_type,
+                    experience_level=experience_level,
+                    budget_min=budget_min,
+                    budget_max=budget_max,
                     limit=max_jobs,
                 )
             except Exception as e:

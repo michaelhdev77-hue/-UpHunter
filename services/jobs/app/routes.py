@@ -64,52 +64,6 @@ async def list_jobs(
     )
 
 
-@router.get("/{job_id}", response_model=JobResponseSchema)
-async def get_job(job_id: int, db: AsyncSession = Depends(get_db)):
-    """Get a single job by ID."""
-    result = await db.execute(select(Job).where(Job.id == job_id))
-    job = result.scalar_one_or_none()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return JobResponseSchema.model_validate(job)
-
-
-@router.patch("/{job_id}/status", response_model=JobResponseSchema)
-async def update_job_status(
-    job_id: int,
-    body: StatusUpdateSchema,
-    db: AsyncSession = Depends(get_db),
-):
-    """Update job pipeline status."""
-    result = await db.execute(select(Job).where(Job.id == job_id))
-    job = result.scalar_one_or_none()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-
-    old_status = job.status
-    job.status = body.status
-    if body.overall_score is not None:
-        job.overall_score = body.overall_score
-    if body.score_details is not None:
-        job.score_details = body.score_details
-    await db.commit()
-    await db.refresh(job)
-
-    # Publish status change event
-    from app.kafka_producer import publish_event
-    await publish_event("job.status_changed", {
-        "job_id": job.id,
-        "old_status": old_status.value if hasattr(old_status, 'value') else str(old_status),
-        "new_status": body.status.value if hasattr(body.status, 'value') else str(body.status),
-        "title": job.title,
-        "overall_score": job.overall_score,
-        "skills": job.skills or [],
-        "upwork_url": job.upwork_url,
-    })
-
-    return JobResponseSchema.model_validate(job)
-
-
 @router.get("/stats/summary")
 async def jobs_summary(db: AsyncSession = Depends(get_db)):
     """Get pipeline statistics."""
@@ -142,14 +96,14 @@ async def top_jobs(
 @router.get("/stats/alerts")
 async def job_alerts(db: AsyncSession = Depends(get_db)):
     """Get high-priority alerts: high-score unreviewed jobs, unscored jobs count."""
-    # High-score jobs not yet applied/approved (score >= 70, status in early stages)
+    # High-score jobs not yet applied (score >= 70, status in early stages)
     high_score_result = await db.execute(
         select(Job)
         .where(
             Job.overall_score >= 70,
             Job.status.in_([
                 JobStatus.scored, JobStatus.letter_ready,
-                JobStatus.under_review, JobStatus.approved,
+                JobStatus.under_review,
             ]),
         )
         .order_by(Job.overall_score.desc())
@@ -288,3 +242,52 @@ async def toggle_filter(filter_id: int, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await db.refresh(sf)
     return SearchFilterResponse.model_validate(sf)
+
+
+# ── Dynamic path routes (MUST be last to avoid shadowing static routes) ─────
+
+
+@router.get("/{job_id}", response_model=JobResponseSchema)
+async def get_job(job_id: int, db: AsyncSession = Depends(get_db)):
+    """Get a single job by ID."""
+    result = await db.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return JobResponseSchema.model_validate(job)
+
+
+@router.patch("/{job_id}/status", response_model=JobResponseSchema)
+async def update_job_status(
+    job_id: int,
+    body: StatusUpdateSchema,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update job pipeline status."""
+    result = await db.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    old_status = job.status
+    job.status = body.status
+    if body.overall_score is not None:
+        job.overall_score = body.overall_score
+    if body.score_details is not None:
+        job.score_details = body.score_details
+    await db.commit()
+    await db.refresh(job)
+
+    # Publish status change event
+    from app.kafka_producer import publish_event
+    await publish_event("job.status_changed", {
+        "job_id": job.id,
+        "old_status": old_status.value if hasattr(old_status, 'value') else str(old_status),
+        "new_status": body.status.value if hasattr(body.status, 'value') else str(body.status),
+        "title": job.title,
+        "overall_score": job.overall_score,
+        "skills": job.skills or [],
+        "upwork_url": job.upwork_url,
+    })
+
+    return JobResponseSchema.model_validate(job)

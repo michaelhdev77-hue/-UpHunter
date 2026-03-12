@@ -9,26 +9,24 @@ import { clsx } from 'clsx';
 import Link from 'next/link';
 
 const statusLabels: Record<string, string> = {
-  discovered: 'Обнаружена',
+  discovered: 'Новая',
   scored: 'Оценена',
-  letter_ready: 'Письмо готово',
+  letter_ready: 'Черновик',
   under_review: 'На проверке',
-  approved: 'Одобрена',
   applied: 'Отклик',
   response: 'Ответ',
-  hired: 'Нанят',
+  hired: 'Контракт',
   rejected: 'Отклонена',
 };
 
 const columns = [
-  { status: 'discovered', label: 'Обнаружена', color: 'border-blue-400', bg: 'bg-blue-50' },
+  { status: 'discovered', label: 'Новая', color: 'border-blue-400', bg: 'bg-blue-50' },
   { status: 'scored', label: 'Оценена', color: 'border-yellow-400', bg: 'bg-yellow-50' },
-  { status: 'letter_ready', label: 'Письмо готово', color: 'border-purple-400', bg: 'bg-purple-50' },
+  { status: 'letter_ready', label: 'Черновик', color: 'border-purple-400', bg: 'bg-purple-50' },
   { status: 'under_review', label: 'На проверке', color: 'border-indigo-400', bg: 'bg-indigo-50' },
-  { status: 'approved', label: 'Одобрена', color: 'border-green-400', bg: 'bg-green-50' },
   { status: 'applied', label: 'Отклик', color: 'border-emerald-400', bg: 'bg-emerald-50' },
   { status: 'response', label: 'Ответ', color: 'border-teal-400', bg: 'bg-teal-50' },
-  { status: 'hired', label: 'Нанят', color: 'border-green-500', bg: 'bg-green-50' },
+  { status: 'hired', label: 'Контракт', color: 'border-green-500', bg: 'bg-green-50' },
   { status: 'rejected', label: 'Отклонена', color: 'border-red-400', bg: 'bg-red-50' },
 ];
 
@@ -58,6 +56,7 @@ function PipelineCard({
 
   const statusOrder = columns.map((c) => c.status);
   const currentIdx = statusOrder.indexOf(colStatus);
+  const prevStatus = currentIdx > 0 ? statusOrder[currentIdx - 1] : null;
   const nextStatus = currentIdx < statusOrder.length - 2 ? statusOrder[currentIdx + 1] : null;
   const canReject = colStatus !== 'rejected' && colStatus !== 'hired';
 
@@ -90,6 +89,15 @@ function PipelineCard({
         )}
       </div>
       <div className="flex gap-1 mt-2">
+        {prevStatus && (
+          <button
+            onClick={() => moveMutation.mutate({ id: job.id, status: prevStatus })}
+            disabled={moveMutation.isPending}
+            className="text-[10px] px-2 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
+          >
+            &larr; {statusLabels[prevStatus] || prevStatus.replace('_', ' ')}
+          </button>
+        )}
         {nextStatus && (
           <button
             onClick={() => moveMutation.mutate({ id: job.id, status: nextStatus })}

@@ -89,9 +89,10 @@ Return a JSON object with EXACTLY these fields:
 - "scope_clarity": integer 0-100, how clearly defined is the project scope and requirements
 - "win_probability": integer 0-100, estimated probability of winning this job considering competition
 - "overall_score": integer 0-100, weighted average (skill_match {w_sm}%, budget_fit {w_bf}%, scope_clarity {w_sc}%, win_probability {w_wp}%)
-- "reasoning": string, 2-4 sentences explaining the key factors behind your scores
+- "reasoning": string, 2-4 sentences IN RUSSIAN explaining the key factors behind your scores
 
-Be realistic and critical. Low-quality clients or vague descriptions should lower scores significantly."""
+Be realistic and critical. Low-quality clients or vague descriptions should lower scores significantly.
+IMPORTANT: The "reasoning" field MUST be written in Russian language."""
 
 
 async def score_job(
@@ -150,6 +151,6 @@ async def score_job(
         )
         return scores
 
-    except Exception:
+    except Exception as exc:
         logger.exception("Failed to score job via OpenAI")
-        return None
+        raise RuntimeError(f"Ошибка AI-оценки (OpenAI): {exc}") from exc

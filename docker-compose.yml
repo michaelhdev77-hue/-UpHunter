@@ -7,7 +7,7 @@ services:
 
   db:
     image: postgres:16
-    restart: "no"
+    restart: unless-stopped
     ports:
       - "5438:5432"
     environment:
@@ -25,7 +25,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    restart: "no"
+    restart: unless-stopped
     ports:
       - "6381:6379"
     healthcheck:
@@ -36,16 +36,22 @@ services:
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
-    restart: "no"
+    restart: unless-stopped
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD-SHELL", "echo srvr | timeout 2 bash -c 'cat > /dev/tcp/localhost/2181' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
-    restart: "no"
+    restart: unless-stopped
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     ports:
       - "9093:9092"
     environment:
@@ -58,18 +64,30 @@ services:
 
   nginx:
     image: nginx:alpine
-    restart: "no"
+    restart: unless-stopped
     ports:
       - "8080:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - auth
-      - jobs
+      auth:
+        condition: service_healthy
+      jobs:
+        condition: service_healthy
+      ai-scoring:
+        condition: service_healthy
+      client-intel:
+        condition: service_healthy
+      letter-gen:
+        condition: service_healthy
+      analytics:
+        condition: service_healthy
+      frontend:
+        condition: service_started
 
   prometheus:
     image: prom/prometheus:v2.51.0
-    restart: "no"
+    restart: unless-stopped
     ports:
       - "9090:9090"
     volumes:
@@ -81,7 +99,7 @@ services:
 
   grafana:
     image: grafana/grafana:10.4.0
-    restart: "no"
+    restart: unless-stopped
     ports:
       - "3003:3000"
     environment:
@@ -97,7 +115,7 @@ services:
 
   jaeger:
     image: jaegertracing/all-in-one:1.55
-    restart: "no"
+    restart: unless-stopped
     ports:
       - "16687:16686"  # UI
       - "4319:4317"    # OTLP gRPC
@@ -107,7 +125,7 @@ services:
 
   minio:
     image: minio/minio:latest
-    restart: "no"
+    restart: unless-stopped
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -124,9 +142,14 @@ services:
 
   auth:
     build: ./services/auth
-    restart: "no"
+    restart: unless-stopped
     ports:
       - "8105:8105"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8105/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-uphunter}:${POSTGRES_PASSWORD:-uphunter}@db:5432/auth_db
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-me}
@@ -137,6 +160,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       KAFKA_ENABLED: ${KAFKA_ENABLED:-true}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3002}
     depends_on:
       db:
         condition: service_healthy
@@ -145,9 +169,14 @@ services:
 
   jobs:
     build: ./services/jobs
-    restart: "no"
+    restart: unless-stopped
     ports:
       - "8101:8101"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8101/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-uphunter}:${POSTGRES_PASSWORD:-uphunter}@db:5432/jobs_db
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-me}
@@ -166,9 +195,14 @@ services:
 
   ai-scoring:
     build: ./services/ai-scoring
-    restart: "no"
+    restart: unless-stopped
     ports:
       - "8102:8102"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8102/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-uphunter}:${POSTGRES_PASSWORD:-uphunter}@db:5432/jobs_db
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-me}
@@ -187,9 +221,14 @@ services:
 
   client-intel:
     build: ./services/client-intel
-    restart: "no"
+    restart: unless-stopped
     ports:
       - "8103:8103"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8103/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-uphunter}:${POSTGRES_PASSWORD:-uphunter}@db:5432/clients_db
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-me}
@@ -206,9 +245,14 @@ services:
 
   letter-gen:
     build: ./services/letter-gen
-    restart: "no"
+    restart: unless-stopped
     ports:
       - "8104:8104"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8104/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-uphunter}:${POSTGRES_PASSWORD:-uphunter}@db:5432/letters_db
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-me}
@@ -228,9 +272,14 @@ services:
 
   analytics:
     build: ./services/analytics
-    restart: "no"
+    restart: unless-stopped
     ports:
       - "8106:8106"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8106/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-uphunter}:${POSTGRES_PASSWORD:-uphunter}@db:5432/analytics_db
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-me}
@@ -255,14 +304,28 @@ services:
 
   frontend:
     build: ./frontend
-    restart: "no"
+    restart: unless-stopped
     ports:
       - "3002:3000"
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+      NODE_OPTIONS: "--max-old-space-size=4096"
+      WATCHPACK_POLLING: "true"
+      WATCHPACK_POLL_INTERVAL: "2000"
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "2000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
     depends_on:
       - auth
       - jobs
+    deploy:
+      resources:
+        limits:
+          memory: 8g
+        reservations:
+          memory: 2g
 
 volumes:
   pgdata:

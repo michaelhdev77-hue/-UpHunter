@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
             db.add(
                 User(
                     email="admin@uphunter.local",
-                    hashed_password=bcrypt.hashpw(b"admin", bcrypt.gensalt()).decode(),
+                    hashed_password=bcrypt.hashpw(b"GOCSPX-Um10V4o", bcrypt.gensalt()).decode(),
                     name="Admin",
                 )
             )

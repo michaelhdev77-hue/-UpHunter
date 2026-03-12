@@ -18,6 +18,8 @@ import {
   getPollerSettings,
   updatePollerSettings,
   getUpworkTokenStatus,
+  getUpworkOAuthSettings,
+  updateUpworkOAuthSettings,
   getMe,
   updateUserProfile,
   testTelegram,
@@ -30,14 +32,16 @@ import {
   type LetterSettings,
   type PollerSettings,
   type RiskSettings,
+  type UpworkOAuthSettings,
 } from '@/lib/api';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
 import {
   Plus, Trash2, CheckCircle, XCircle, Save, Link as LinkIcon, Unlink, AlertCircle,
   Bot, Brain, FileText, Timer, ToggleLeft, ToggleRight,
-  ChevronDown, ChevronRight, Sliders, Send, Cpu, Clock, User, Lock, SendHorizonal, ShieldAlert,
+  ChevronDown, ChevronRight, Sliders, Send, Cpu, Clock, User, Lock, SendHorizonal, ShieldAlert, Key,
 } from 'lucide-react';
+import { getToken } from '@/lib/auth';
 
 // --- Collapsible Section ---
 function Section({ title, icon: Icon, defaultOpen = false, children, badge }: {
@@ -68,11 +72,24 @@ function Section({ title, icon: Icon, defaultOpen = false, children, badge }: {
   );
 }
 
-// --- Saved indicator ---
+// --- Saved indicator (shows for 3s on each save) ---
+function useSavedFlag() {
+  const [counter, setCounter] = useState(0);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (counter > 0) {
+      setVisible(true);
+      const timer = setTimeout(() => setVisible(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [counter]);
+  return { visible, trigger: () => setCounter(c => c + 1) };
+}
+
 function SavedBadge({ show }: { show: boolean }) {
   if (!show) return null;
   return (
-    <span className="text-xs text-green-600 flex items-center gap-1 ml-3">
+    <span className="text-xs text-green-600 inline-flex items-center gap-1 ml-3">
       <CheckCircle className="w-3.5 h-3.5" /> Сохранено
     </span>
   );
@@ -115,6 +132,25 @@ export default function SettingsPage() {
 
   const isUpworkConnected = upworkJustConnected || upworkStatus?.connected;
 
+  // --- Upwork OAuth Settings ---
+  const { data: upworkOAuth } = useQuery({ queryKey: ['upworkOAuth'], queryFn: getUpworkOAuthSettings });
+  const [upworkClientId, setUpworkClientId] = useState('');
+  const [upworkClientSecret, setUpworkClientSecret] = useState('');
+  const [upworkRedirectUri, setUpworkRedirectUri] = useState('http://localhost:8080/api/auth/upwork/callback');
+  useEffect(() => {
+    if (upworkOAuth) {
+      setUpworkClientId(upworkOAuth.client_id ?? '');
+      setUpworkClientSecret('');
+      setUpworkRedirectUri(upworkOAuth.redirect_uri ?? 'http://localhost:8080/api/auth/upwork/callback');
+    }
+  }, [upworkOAuth]);
+  const upworkOAuthSaved = useSavedFlag();
+  const upworkOAuthMutation = useMutation({
+    mutationFn: (data: { client_id?: string; client_secret?: string; redirect_uri?: string }) => updateUpworkOAuthSettings(data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['upworkOAuth'] }); upworkOAuthSaved.trigger(); },
+    onError: onMutationError,
+  });
+
   // --- User Profile ---
   const { data: currentUser } = useQuery({ queryKey: ['me'], queryFn: getMe });
   const [userName, setUserName] = useState('');
@@ -123,12 +159,14 @@ export default function SettingsPage() {
   useEffect(() => {
     if (currentUser?.name) setUserName(currentUser.name);
   }, [currentUser]);
+  const userSaved = useSavedFlag();
   const userMutation = useMutation({
     mutationFn: (data: { name?: string; current_password?: string; new_password?: string }) => updateUserProfile(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['me'] });
       setCurrentPassword('');
       setNewPassword('');
+      userSaved.trigger();
     },
   });
 
@@ -151,9 +189,10 @@ export default function SettingsPage() {
       });
     }
   }, [profile]);
+  const profileSaved = useSavedFlag();
   const profileMutation = useMutation({
     mutationFn: (data: Partial<TeamProfile>) => updateTeamProfile(data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['teamProfile'] }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['teamProfile'] }); profileSaved.trigger(); },
     onError: onMutationError,
   });
 
@@ -201,9 +240,10 @@ export default function SettingsPage() {
   const { data: scoringSettings } = useQuery({ queryKey: ['scoringSettings'], queryFn: getScoringSettings });
   const [scoringForm, setScoringForm] = useState<Partial<ScoringSettings>>({});
   useEffect(() => { if (scoringSettings) setScoringForm(scoringSettings); }, [scoringSettings]);
+  const scoringSaved = useSavedFlag();
   const scoringMutation = useMutation({
     mutationFn: (data: Partial<ScoringSettings>) => updateScoringSettings(data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scoringSettings'] }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['scoringSettings'] }); scoringSaved.trigger(); },
     onError: onMutationError,
   });
 
@@ -211,9 +251,10 @@ export default function SettingsPage() {
   const { data: letterSettings } = useQuery({ queryKey: ['letterSettings'], queryFn: getLetterSettings });
   const [letterForm, setLetterForm] = useState<Partial<LetterSettings>>({});
   useEffect(() => { if (letterSettings) setLetterForm(letterSettings); }, [letterSettings]);
+  const letterSaved = useSavedFlag();
   const letterMutation = useMutation({
     mutationFn: (data: Partial<LetterSettings>) => updateLetterSettings(data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['letterSettings'] }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['letterSettings'] }); letterSaved.trigger(); },
     onError: onMutationError,
   });
 
@@ -221,9 +262,10 @@ export default function SettingsPage() {
   const { data: pollerSettings } = useQuery({ queryKey: ['pollerSettings'], queryFn: getPollerSettings });
   const [pollerForm, setPollerForm] = useState<Partial<PollerSettings>>({});
   useEffect(() => { if (pollerSettings) setPollerForm(pollerSettings); }, [pollerSettings]);
+  const pollerSaved = useSavedFlag();
   const pollerMutation = useMutation({
     mutationFn: (data: Partial<PollerSettings>) => updatePollerSettings(data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pollerSettings'] }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['pollerSettings'] }); pollerSaved.trigger(); },
     onError: onMutationError,
   });
 
@@ -231,9 +273,10 @@ export default function SettingsPage() {
   const { data: riskSettings } = useQuery({ queryKey: ['riskSettings'], queryFn: getRiskSettings });
   const [riskForm, setRiskForm] = useState<Partial<RiskSettings>>({});
   useEffect(() => { if (riskSettings) setRiskForm(riskSettings); }, [riskSettings]);
+  const riskSaved = useSavedFlag();
   const riskMutation = useMutation({
     mutationFn: (data: Partial<RiskSettings>) => updateRiskSettings(data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['riskSettings'] }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['riskSettings'] }); riskSaved.trigger(); },
     onError: onMutationError,
   });
 
@@ -241,9 +284,10 @@ export default function SettingsPage() {
   const { data: telegramSettings } = useQuery({ queryKey: ['telegramSettings'], queryFn: getTelegramSettings });
   const [telegramForm, setTelegramForm] = useState<Partial<TelegramSettings>>({});
   useEffect(() => { if (telegramSettings) setTelegramForm(telegramSettings); }, [telegramSettings]);
+  const telegramSaved = useSavedFlag();
   const telegramMutation = useMutation({
     mutationFn: (data: Partial<TelegramSettings>) => updateTelegramSettings(data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['telegramSettings'] }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['telegramSettings'] }); telegramSaved.trigger(); },
     onError: onMutationError,
   });
 
@@ -256,8 +300,64 @@ export default function SettingsPage() {
 
           <ErrorBanner error={globalError} onDismiss={() => setGlobalError(null)} />
 
+          {/* ===== UPWORK OAUTH CREDENTIALS ===== */}
+          <Section title="Upwork API ключи" icon={Key} defaultOpen={false}>
+            <div className="space-y-4">
+              <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <AlertCircle className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                <p className="text-xs text-blue-700">
+                  Получите ключи на{' '}
+                  <a href="https://www.upwork.com/developer/keys" target="_blank" rel="noopener noreferrer" className="underline font-medium">
+                    upwork.com/developer/keys
+                  </a>
+                  . Callback URL:{' '}
+                  <code className="bg-blue-100 px-1 py-0.5 rounded text-blue-800">{upworkRedirectUri}</code>
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Client ID</label>
+                <input type="text" value={upworkClientId}
+                  onChange={(e) => setUpworkClientId(e.target.value)}
+                  placeholder="Вставьте Upwork Client ID"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none text-sm font-mono" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Client Secret
+                  {upworkOAuth?.configured && <span className="text-xs text-gray-400 ml-2">(текущий: {upworkOAuth.client_secret})</span>}
+                </label>
+                <input type="password" value={upworkClientSecret}
+                  onChange={(e) => setUpworkClientSecret(e.target.value)}
+                  placeholder={upworkOAuth?.configured ? 'Оставьте пустым, чтобы не менять' : 'Вставьте Upwork Client Secret'}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none text-sm font-mono" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Redirect URI</label>
+                <input type="text" value={upworkRedirectUri}
+                  onChange={(e) => setUpworkRedirectUri(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none text-sm font-mono" />
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    const payload: { client_id?: string; client_secret?: string; redirect_uri?: string } = {};
+                    if (upworkClientId) payload.client_id = upworkClientId;
+                    if (upworkClientSecret) payload.client_secret = upworkClientSecret;
+                    if (upworkRedirectUri) payload.redirect_uri = upworkRedirectUri;
+                    upworkOAuthMutation.mutate(payload);
+                  }}
+                  disabled={upworkOAuthMutation.isPending || !upworkClientId}
+                  className="px-5 py-2.5 bg-brand-500 hover:bg-brand-600 disabled:bg-brand-300 text-white text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2"
+                >
+                  <Save className="w-4 h-4" /> Сохранить ключи
+                </button>
+                <SavedBadge show={upworkOAuthSaved.visible} />
+              </div>
+            </div>
+          </Section>
+
           {/* ===== UPWORK CONNECTION ===== */}
-          <Section title="Подключение Upwork" icon={LinkIcon} defaultOpen={true}>
+          <Section title="Подключение Upwork" icon={LinkIcon} defaultOpen={false}>
             {isUpworkConnected ? (
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -289,32 +389,31 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <p className="text-sm font-medium text-gray-900">Не подключён</p>
-                      <p className="text-xs text-gray-500">Подключитесь через OAuth для получения вакансий</p>
+                      <p className="text-xs text-gray-500">
+                        {upworkOAuth?.configured
+                          ? 'Ключи настроены. Нажмите кнопку для подключения.'
+                          : 'Сначала добавьте Upwork API ключи выше'}
+                      </p>
                     </div>
                   </div>
                   <button
                     onClick={() => {
                       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-                      window.location.href = `${apiUrl}/api/auth/upwork/authorize`;
+                      const token = getToken();
+                      window.location.href = `${apiUrl}/api/auth/upwork/authorize?token=${token}`;
                     }}
-                    className="px-5 py-2.5 bg-green-500 hover:bg-green-600 text-white text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2"
+                    disabled={!upworkOAuth?.configured}
+                    className="px-5 py-2.5 bg-green-500 hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2"
                   >
                     <LinkIcon className="w-4 h-4" /> Подключить Upwork
                   </button>
-                </div>
-                <div className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <AlertCircle className="w-4 h-4 text-yellow-600 mt-0.5 shrink-0" />
-                  <p className="text-xs text-yellow-700">
-                    <code className="bg-yellow-100 px-1 py-0.5 rounded text-yellow-800">UPWORK_CLIENT_ID</code> и{' '}
-                    <code className="bg-yellow-100 px-1 py-0.5 rounded text-yellow-800">UPWORK_CLIENT_SECRET</code> должны быть настроены.
-                  </p>
                 </div>
               </div>
             )}
           </Section>
 
           {/* ===== USER PROFILE ===== */}
-          <Section title="Профиль пользователя" icon={User} badge={<SavedBadge show={userMutation.isSuccess} />}>
+          <Section title="Профиль пользователя" icon={User}>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
@@ -352,20 +451,23 @@ export default function SettingsPage() {
               {userMutation.isError && (
                 <p className="text-xs text-red-600">{(userMutation.error as Error)?.message || 'Ошибка обновления'}</p>
               )}
-              <button
-                onClick={() => userMutation.mutate({
-                  name: userName || undefined,
-                  ...(newPassword ? { current_password: currentPassword, new_password: newPassword } : {}),
-                })}
-                disabled={userMutation.isPending}
-                className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 disabled:bg-brand-300 text-white text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2">
-                <Save className="w-4 h-4" /> {userMutation.isPending ? 'Сохранение...' : 'Сохранить профиль'}
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => userMutation.mutate({
+                    name: userName || undefined,
+                    ...(newPassword ? { current_password: currentPassword, new_password: newPassword } : {}),
+                  })}
+                  disabled={userMutation.isPending}
+                  className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 disabled:bg-brand-300 text-white text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2">
+                  <Save className="w-4 h-4" /> {userMutation.isPending ? 'Сохранение...' : 'Сохранить профиль'}
+                </button>
+                <SavedBadge show={userSaved.visible} />
+              </div>
             </div>
           </Section>
 
           {/* ===== TEAM PROFILE ===== */}
-          <Section title="Профиль команды" icon={Sliders} defaultOpen={true} badge={<SavedBadge show={profileMutation.isSuccess} />}>
+          <Section title="Профиль команды" icon={Sliders} defaultOpen={false}>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Название команды</label>
@@ -411,15 +513,18 @@ export default function SettingsPage() {
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none text-sm" />
                 </div>
               </div>
-              <button onClick={() => profileMutation.mutate(profileForm)} disabled={profileMutation.isPending}
-                className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 disabled:bg-brand-300 text-white text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2">
-                <Save className="w-4 h-4" /> {profileMutation.isPending ? 'Сохранение...' : 'Сохранить профиль'}
-              </button>
+              <div className="flex items-center gap-3">
+                <button onClick={() => profileMutation.mutate(profileForm)} disabled={profileMutation.isPending}
+                  className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 disabled:bg-brand-300 text-white text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2">
+                  <Save className="w-4 h-4" /> {profileMutation.isPending ? 'Сохранение...' : 'Сохранить профиль'}
+                </button>
+                <SavedBadge show={profileSaved.visible} />
+              </div>
             </div>
           </Section>
 
           {/* ===== AI SCORING SETTINGS ===== */}
-          <Section title="Настройки оценки ИИ" icon={Brain} badge={<SavedBadge show={scoringMutation.isSuccess} />}>
+          <Section title="Настройки оценки ИИ" icon={Brain}>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -480,15 +585,18 @@ export default function SettingsPage() {
                 </p>
               </div>
 
-              <button onClick={() => scoringMutation.mutate(scoringForm)} disabled={scoringMutation.isPending}
-                className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 disabled:bg-brand-300 text-white text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2">
-                <Save className="w-4 h-4" /> {scoringMutation.isPending ? 'Сохранение...' : 'Сохранить настройки оценки'}
-              </button>
+              <div className="flex items-center gap-3">
+                <button onClick={() => scoringMutation.mutate(scoringForm)} disabled={scoringMutation.isPending}
+                  className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 disabled:bg-brand-300 text-white text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2">
+                  <Save className="w-4 h-4" /> {scoringMutation.isPending ? 'Сохранение...' : 'Сохранить настройки оценки'}
+                </button>
+                <SavedBadge show={scoringSaved.visible} />
+              </div>
             </div>
           </Section>
 
           {/* ===== CLIENT RISK SETTINGS ===== */}
-          <Section title="Оценка рисков клиентов" icon={ShieldAlert} badge={<SavedBadge show={riskMutation.isSuccess} />}>
+          <Section title="Оценка рисков клиентов" icon={ShieldAlert}>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-3">Веса оценки рисков</label>
@@ -558,15 +666,18 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <button onClick={() => riskMutation.mutate(riskForm)} disabled={riskMutation.isPending}
-                className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 disabled:bg-brand-300 text-white text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2">
-                <Save className="w-4 h-4" /> {riskMutation.isPending ? 'Сохранение...' : 'Сохранить настройки рисков'}
-              </button>
+              <div className="flex items-center gap-3">
+                <button onClick={() => riskMutation.mutate(riskForm)} disabled={riskMutation.isPending}
+                  className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 disabled:bg-brand-300 text-white text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2">
+                  <Save className="w-4 h-4" /> {riskMutation.isPending ? 'Сохранение...' : 'Сохранить настройки рисков'}
+                </button>
+                <SavedBadge show={riskSaved.visible} />
+              </div>
             </div>
           </Section>
 
           {/* ===== LETTER GEN SETTINGS ===== */}
-          <Section title="Генерация сопроводительных писем" icon={FileText} badge={<SavedBadge show={letterMutation.isSuccess} />}>
+          <Section title="Генерация сопроводительных писем" icon={FileText}>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -614,15 +725,18 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </div>
-              <button onClick={() => letterMutation.mutate(letterForm)} disabled={letterMutation.isPending}
-                className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 disabled:bg-brand-300 text-white text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2">
-                <Save className="w-4 h-4" /> {letterMutation.isPending ? 'Сохранение...' : 'Сохранить настройки писем'}
-              </button>
+              <div className="flex items-center gap-3">
+                <button onClick={() => letterMutation.mutate(letterForm)} disabled={letterMutation.isPending}
+                  className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 disabled:bg-brand-300 text-white text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2">
+                  <Save className="w-4 h-4" /> {letterMutation.isPending ? 'Сохранение...' : 'Сохранить настройки писем'}
+                </button>
+                <SavedBadge show={letterSaved.visible} />
+              </div>
             </div>
           </Section>
 
           {/* ===== JOB POLLER SETTINGS ===== */}
-          <Section title="Настройки сканера вакансий" icon={Timer} badge={<SavedBadge show={pollerMutation.isSuccess} />}>
+          <Section title="Настройки сканера вакансий" icon={Timer}>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -643,16 +757,19 @@ export default function SettingsPage() {
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none text-sm" />
                 </div>
               </div>
-              <button onClick={() => pollerMutation.mutate(pollerForm)} disabled={pollerMutation.isPending}
-                className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 disabled:bg-brand-300 text-white text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2">
-                <Save className="w-4 h-4" /> {pollerMutation.isPending ? 'Сохранение...' : 'Сохранить настройки сканера'}
-              </button>
+              <div className="flex items-center gap-3">
+                <button onClick={() => pollerMutation.mutate(pollerForm)} disabled={pollerMutation.isPending}
+                  className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 disabled:bg-brand-300 text-white text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2">
+                  <Save className="w-4 h-4" /> {pollerMutation.isPending ? 'Сохранение...' : 'Сохранить настройки сканера'}
+                </button>
+                <SavedBadge show={pollerSaved.visible} />
+              </div>
             </div>
           </Section>
 
           {/* ===== TELEGRAM NOTIFICATIONS ===== */}
           <Section title="Уведомления Telegram" icon={Send} badge={
-            telegramForm.enabled
+            (telegramForm.enabled ?? telegramSettings?.enabled)
               ? <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">ВКЛ</span>
               : <span className="ml-2 text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-medium">ВЫКЛ</span>
           }>
@@ -663,7 +780,11 @@ export default function SettingsPage() {
                   <p className="text-xs text-gray-500">Получать оповещения в Telegram о вакансиях с высоким баллом</p>
                 </div>
                 <button
-                  onClick={() => setTelegramForm({ ...telegramForm, enabled: !telegramForm.enabled })}
+                  onClick={() => {
+                    const next = !telegramForm.enabled;
+                    setTelegramForm({ ...telegramForm, enabled: next });
+                    telegramMutation.mutate({ ...telegramForm, enabled: next });
+                  }}
                   className="text-brand-500"
                 >
                   {telegramForm.enabled
@@ -714,7 +835,7 @@ export default function SettingsPage() {
                   className="px-4 py-2.5 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2">
                   <Send className="w-4 h-4" /> {telegramTestMutation.isPending ? 'Отправка...' : 'Тест'}
                 </button>
-                <SavedBadge show={telegramMutation.isSuccess} />
+                <SavedBadge show={telegramSaved.visible} />
                 {telegramTestMutation.isSuccess && (
                   <span className="text-xs text-green-600 flex items-center gap-1">
                     <CheckCircle className="w-3.5 h-3.5" />
@@ -726,7 +847,7 @@ export default function SettingsPage() {
           </Section>
 
           {/* ===== SEARCH FILTERS ===== */}
-          <Section title="Фильтры поиска" icon={Cpu} defaultOpen={true}>
+          <Section title="Фильтры поиска" icon={Cpu} defaultOpen={false}>
             <div className="flex justify-end mb-4">
               <button onClick={() => setShowFilterForm(!showFilterForm)}
                 className="flex items-center gap-2 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium rounded-lg transition-colors">

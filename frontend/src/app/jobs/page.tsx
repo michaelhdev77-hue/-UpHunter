@@ -5,34 +5,87 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getJobs, scoreAllJobs, type Job } from '@/lib/api';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
-import { Search, ChevronLeft, ChevronRight, MapPin, Star, ExternalLink, DollarSign, Users, Sparkles } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, MapPin, Star, ExternalLink, DollarSign, Users, Sparkles, X } from 'lucide-react';
 import { clsx } from 'clsx';
 import Link from 'next/link';
+
+function OpenAIErrorCard({ error, onClose }: { error: string; onClose?: () => void }) {
+  const isQuota = /insufficient_quota|exceeded.*quota|429/i.test(error);
+  const isRateLimit = /rate.?limit|too many requests/i.test(error);
+  const isTimeout = /timeout|timed?\s?out/i.test(error);
+  const isKeyError = /invalid.*key|auth|401|incorrect.*api/i.test(error);
+
+  let title = 'Ошибка OpenAI';
+  let message = 'Произошла ошибка при обращении к OpenAI API.';
+  let actionLabel = 'Открыть OpenAI Dashboard';
+  let actionUrl = 'https://platform.openai.com/settings/organization/billing/overview';
+
+  if (isQuota) {
+    title = 'Квота API исчерпана';
+    message = 'Баланс OpenAI исчерпан. Пополните на platform.openai.com';
+  } else if (isRateLimit) {
+    title = 'Превышен лимит запросов';
+    message = 'Слишком много запросов к OpenAI. Подождите немного и попробуйте снова.';
+  } else if (isTimeout) {
+    title = 'Таймаут запроса';
+    message = 'OpenAI не ответил вовремя. Попробуйте снова.';
+  } else if (isKeyError) {
+    title = 'Неверный API ключ';
+    message = 'Проверьте API ключ OpenAI в настройках.';
+    actionLabel = 'Открыть настройки';
+    actionUrl = '/settings';
+  }
+
+  return (
+    <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-4 text-left">
+      <div className="flex items-start gap-3">
+        <span className="text-amber-500 text-lg leading-none mt-0.5">&#9888;</span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-amber-800">{title}</p>
+            {onClose && (
+              <button onClick={onClose} className="text-amber-400 hover:text-amber-600 ml-2">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-amber-700 mt-1">{message}</p>
+          <a
+            href={actionUrl}
+            target={actionUrl.startsWith('http') ? '_blank' : undefined}
+            rel={actionUrl.startsWith('http') ? 'noopener noreferrer' : undefined}
+            className="inline-flex items-center gap-1 text-xs text-amber-600 hover:text-amber-800 font-medium mt-2 underline underline-offset-2"
+          >
+            {actionLabel} &#8599;
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const PAGE_SIZE = 20;
 
 const statusOptions = [
   { value: '', label: 'Все статусы' },
-  { value: 'discovered', label: 'Обнаружена' },
+  { value: 'discovered', label: 'Новая' },
   { value: 'scored', label: 'Оценена' },
-  { value: 'letter_ready', label: 'Письмо готово' },
-  { value: 'under_review', label: 'На рассмотрении' },
-  { value: 'approved', label: 'Одобрена' },
-  { value: 'applied', label: 'Отклик отправлен' },
-  { value: 'response', label: 'Есть ответ' },
-  { value: 'hired', label: 'Нанят' },
+  { value: 'letter_ready', label: 'Черновик' },
+  { value: 'under_review', label: 'На проверке' },
+  { value: 'applied', label: 'Отклик' },
+  { value: 'response', label: 'Ответ' },
+  { value: 'hired', label: 'Контракт' },
   { value: 'rejected', label: 'Отклонена' },
 ];
 
 const statusLabels: Record<string, string> = {
-  discovered: 'Обнаружена',
+  discovered: 'Новая',
   scored: 'Оценена',
-  letter_ready: 'Письмо готово',
-  under_review: 'На рассмотрении',
-  approved: 'Одобрена',
-  applied: 'Отклик отправлен',
-  response: 'Есть ответ',
-  hired: 'Нанят',
+  letter_ready: 'Черновик',
+  under_review: 'На проверке',
+  applied: 'Отклик',
+  response: 'Ответ',
+  hired: 'Контракт',
   rejected: 'Отклонена',
 };
 
@@ -41,7 +94,6 @@ const statusColors: Record<string, string> = {
   scored: 'bg-yellow-100 text-yellow-700',
   letter_ready: 'bg-purple-100 text-purple-700',
   under_review: 'bg-indigo-100 text-indigo-700',
-  approved: 'bg-green-100 text-green-700',
   applied: 'bg-emerald-100 text-emerald-700',
   response: 'bg-teal-100 text-teal-700',
   hired: 'bg-green-200 text-green-800',
@@ -95,13 +147,19 @@ export default function JobsPage() {
   const scoreAllMut = useMutation({
     mutationFn: scoreAllJobs,
     onSuccess: (result) => {
-      setScoreAllMessage(`Оценено ${result.scored} вакансий${result.failed > 0 ? `, ${result.failed} с ошибкой` : ''}`);
+      let msg = `Оценено ${result.scored} вакансий`;
+      if (result.failed > 0) {
+        msg += `, ${result.failed} с ошибкой`;
+        if (result.error) msg += `: ${result.error}`;
+      }
+      setScoreAllMessage(msg);
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
-      setTimeout(() => setScoreAllMessage(null), 5000);
+      setTimeout(() => setScoreAllMessage(null), 8000);
     },
-    onError: () => {
-      setScoreAllMessage('Ошибка оценки вакансий');
-      setTimeout(() => setScoreAllMessage(null), 5000);
+    onError: (e: any) => {
+      const detail = e?.response?.data?.detail || e?.message || 'Неизвестная ошибка';
+      setScoreAllMessage(`Ошибка оценки вакансий: ${detail}`);
+      setTimeout(() => setScoreAllMessage(null), 8000);
     },
   });
 
@@ -178,15 +236,15 @@ export default function JobsPage() {
               <Sparkles className={clsx('w-4 h-4', scoreAllMut.isPending && 'animate-pulse')} />
               {scoreAllMut.isPending ? 'Оценка...' : 'Оценить все'}
             </button>
-            {scoreAllMessage && (
-              <span className={clsx(
-                'text-xs font-medium px-3 py-1.5 rounded-lg',
-                scoreAllMessage.includes('Ошибка') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'
-              )}>
+            {scoreAllMessage && !scoreAllMessage.includes('Ошибка') && (
+              <span className="text-xs font-medium px-3 py-1.5 rounded-lg bg-green-50 text-green-600">
                 {scoreAllMessage}
               </span>
             )}
           </div>
+          {scoreAllMessage && scoreAllMessage.includes('Ошибка') && (
+            <OpenAIErrorCard error={scoreAllMessage} onClose={() => setScoreAllMessage(null)} />
+          )}
 
           {/* Список вакансий */}
           <div className="space-y-3">

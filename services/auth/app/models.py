@@ -37,6 +37,17 @@ class UpworkToken(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class UpworkOAuthConfig(Base):
+    """Upwork OAuth credentials managed via UI."""
+    __tablename__ = "upwork_oauth_config"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(String(255), nullable=False, default="")
+    client_secret = Column(String(255), nullable=False, default="")
+    redirect_uri = Column(String(500), nullable=False, default="http://localhost:8080/api/auth/upwork/callback")
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class TeamProfile(Base):
     """Team skills and portfolio for AI scoring context."""
     __tablename__ = "team_profiles"
@@ -99,3 +110,18 @@ class TeamProfileUpdate(BaseModel):
     cover_letter_style: Optional[str] = None
     hourly_rate_min: Optional[int] = None
     hourly_rate_max: Optional[int] = None
+
+
+class UpworkOAuthConfigSchema(BaseModel):
+    client_id: str = ""
+    client_secret: str = ""
+    redirect_uri: str = "http://localhost:8080/api/auth/upwork/callback"
+    configured: bool = False
+
+    model_config = {"from_attributes": True}
+
+
+class UpworkOAuthConfigUpdate(BaseModel):
+    client_id: Optional[str] = None
+    client_secret: Optional[str] = None
+    redirect_uri: Optional[str] = None

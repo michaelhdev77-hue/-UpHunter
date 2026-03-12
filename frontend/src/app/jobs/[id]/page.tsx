@@ -14,6 +14,7 @@ import {
   scoreJob,
   updateJobStatus,
   getJobScore,
+  translateText,
   type Job,
   type CoverLetter,
 } from '@/lib/api';
@@ -40,6 +41,7 @@ import {
   Pencil,
   Save,
   X,
+  Languages,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import Link from 'next/link';
@@ -49,7 +51,6 @@ const statusColors: Record<string, string> = {
   scored: 'bg-yellow-100 text-yellow-700',
   letter_ready: 'bg-purple-100 text-purple-700',
   under_review: 'bg-indigo-100 text-indigo-700',
-  approved: 'bg-green-100 text-green-700',
   applied: 'bg-emerald-100 text-emerald-700',
   response: 'bg-teal-100 text-teal-700',
   hired: 'bg-green-200 text-green-800',
@@ -91,6 +92,61 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
   );
 }
 
+function OpenAIErrorCard({ error, onClose }: { error: string; onClose?: () => void }) {
+  const isQuota = /insufficient_quota|exceeded.*quota|429/i.test(error);
+  const isRateLimit = /rate.?limit|too many requests/i.test(error);
+  const isTimeout = /timeout|timed?\s?out/i.test(error);
+  const isKeyError = /invalid.*key|auth|401|incorrect.*api/i.test(error);
+
+  let title = 'Ошибка OpenAI';
+  let message = 'Произошла ошибка при обращении к OpenAI API.';
+  let actionLabel = 'Открыть OpenAI Dashboard';
+  let actionUrl = 'https://platform.openai.com/settings/organization/billing/overview';
+
+  if (isQuota) {
+    title = 'Квота API исчерпана';
+    message = 'Баланс OpenAI исчерпан. Пополните на platform.openai.com';
+  } else if (isRateLimit) {
+    title = 'Превышен лимит запросов';
+    message = 'Слишком много запросов к OpenAI. Подождите немного и попробуйте снова.';
+  } else if (isTimeout) {
+    title = 'Таймаут запроса';
+    message = 'OpenAI не ответил вовремя. Попробуйте снова.';
+  } else if (isKeyError) {
+    title = 'Неверный API ключ';
+    message = 'Проверьте API ключ OpenAI в настройках.';
+    actionLabel = 'Открыть настройки';
+    actionUrl = '/settings';
+  }
+
+  return (
+    <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-4 text-left">
+      <div className="flex items-start gap-3">
+        <span className="text-amber-500 text-lg leading-none mt-0.5">&#9888;</span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-amber-800">{title}</p>
+            {onClose && (
+              <button onClick={onClose} className="text-amber-400 hover:text-amber-600 ml-2">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-amber-700 mt-1">{message}</p>
+          <a
+            href={actionUrl}
+            target={actionUrl.startsWith('http') ? '_blank' : undefined}
+            rel={actionUrl.startsWith('http') ? 'noopener noreferrer' : undefined}
+            className="inline-flex items-center gap-1 text-xs text-amber-600 hover:text-amber-800 font-medium mt-2 underline underline-offset-2"
+          >
+            {actionLabel} &#8599;
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const STYLES = ['professional', 'casual', 'technical'] as const;
 const STYLE_LABELS: Record<string, string> = {
   professional: 'профессиональный',
@@ -98,15 +154,14 @@ const STYLE_LABELS: Record<string, string> = {
   technical: 'технический',
 };
 const STATUS_LABELS: Record<string, string> = {
-  discovered: 'Обнаружена',
+  discovered: 'Новая',
   scored: 'Оценена',
-  letter_ready: 'Письмо готово',
-  under_review: 'На рассмотрении',
-  approved: 'Одобрено',
-  applied: 'Отправлено',
-  response: 'Ответ получен',
-  hired: 'Нанят',
-  rejected: 'Отклонено',
+  letter_ready: 'Черновик',
+  under_review: 'На проверке',
+  applied: 'Отклик',
+  response: 'Ответ',
+  hired: 'Контракт',
+  rejected: 'Отклонена',
   draft: 'черновик',
 };
 
@@ -119,7 +174,11 @@ function CoverLetterSection({ jobId, jobStatus, upworkUrl }: { jobId: number; jo
   const [editContent, setEditContent] = useState('');
   const [editContentRu, setEditContentRu] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const onErr = (e: Error) => { setErrorMsg(e?.message || 'Операция не удалась'); setTimeout(() => setErrorMsg(null), 5000); };
+  const onErr = (e: any) => {
+    const detail = e?.response?.data?.detail || e?.message || 'Операция не удалась';
+    setErrorMsg(typeof detail === 'string' ? detail : JSON.stringify(detail));
+    setTimeout(() => setErrorMsg(null), 8000);
+  };
 
   const { data: letter, isLoading, error } = useQuery({
     queryKey: ['coverLetter', jobId],
@@ -242,6 +301,7 @@ function CoverLetterSection({ jobId, jobStatus, upworkUrl }: { jobId: number; jo
             <Sparkles className="w-4 h-4" />
             {generateMut.isPending ? 'Генерация...' : 'Создать сопроводительное письмо'}
           </button>
+          {errorMsg && <OpenAIErrorCard error={errorMsg} onClose={() => setErrorMsg(null)} />}
         </div>
       </div>
     );
@@ -261,18 +321,12 @@ function CoverLetterSection({ jobId, jobStatus, upworkUrl }: { jobId: number; jo
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6">
-      {errorMsg && (
-        <div className="mb-4 flex items-center gap-2 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">
-          <X className="w-3.5 h-3.5 shrink-0 cursor-pointer" onClick={() => setErrorMsg(null)} />
-          {errorMsg}
-        </div>
-      )}
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-          <FileText className="w-5 h-5" />
-          Сопроводительное письмо
+      <div className="mb-4">
+        <div className="flex items-center gap-2 mb-2">
+          <FileText className="w-5 h-5 text-gray-700 shrink-0" />
+          <h3 className="text-lg font-semibold text-gray-900">Сопроводительное письмо</h3>
           <span className={clsx(
-            'text-xs font-medium px-2 py-0.5 rounded-full ml-2',
+            'text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap',
             letter.status === 'approved' ? 'bg-green-100 text-green-700' :
             letter.status === 'rejected' ? 'bg-red-100 text-red-700' :
             'bg-gray-100 text-gray-600'
@@ -280,11 +334,11 @@ function CoverLetterSection({ jobId, jobStatus, upworkUrl }: { jobId: number; jo
             {STATUS_LABELS[letter.status] || letter.status} v{letter.version}
           </span>
           {letter.style && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 ml-1">
+            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 whitespace-nowrap">
               {STYLE_LABELS[letter.style] || letter.style}
             </span>
           )}
-        </h3>
+        </div>
         <div className="flex items-center gap-2">
           {letter.content_ru && (
             <button
@@ -408,6 +462,8 @@ function CoverLetterSection({ jobId, jobStatus, upworkUrl }: { jobId: number; jo
         </div>
       )}
 
+      {errorMsg && <OpenAIErrorCard error={errorMsg} onClose={() => setErrorMsg(null)} />}
+
       {/* Regenerate Options */}
       {showRegenOptions && letter && (
         <div className="mt-4 pt-4 border-t border-gray-100">
@@ -483,14 +539,14 @@ function StatusActions({ jobId, status }: { jobId: number; status: string }) {
 
   const buttons: { label: string; targetStatus: string; color: string }[] = [];
 
-  if (status === 'approved') {
+  if (status === 'under_review') {
     buttons.push({ label: 'Отметить как отправлено', targetStatus: 'applied', color: 'bg-emerald-500 hover:bg-emerald-600 text-white' });
   }
   if (status === 'applied') {
     buttons.push({ label: 'Отметить ответ', targetStatus: 'response', color: 'bg-teal-500 hover:bg-teal-600 text-white' });
   }
   if (status === 'response') {
-    buttons.push({ label: 'Отметить как нанят', targetStatus: 'hired', color: 'bg-green-600 hover:bg-green-700 text-white' });
+    buttons.push({ label: 'Получил контракт', targetStatus: 'hired', color: 'bg-green-600 hover:bg-green-700 text-white' });
   }
   if (status !== 'rejected' && status !== 'hired') {
     buttons.push({ label: 'Отклонить', targetStatus: 'rejected', color: 'bg-red-50 hover:bg-red-100 text-red-600 border border-red-200' });
@@ -535,6 +591,32 @@ export default function JobDetailPage() {
     enabled: !!jobId,
   });
 
+  const [descriptionRu, setDescriptionRu] = useState<string | null>(null);
+  const [showDescRu, setShowDescRu] = useState(false);
+  const [translating, setTranslating] = useState(false);
+  const [translateError, setTranslateError] = useState<string | null>(null);
+
+  const handleTranslateDescription = async () => {
+    if (descriptionRu) {
+      setShowDescRu(!showDescRu);
+      return;
+    }
+    if (!job?.description) return;
+    setTranslating(true);
+    setTranslateError(null);
+    try {
+      const translated = await translateText(job.description);
+      setDescriptionRu(translated);
+      setShowDescRu(true);
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || e?.message || 'Ошибка перевода';
+      setTranslateError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      setTimeout(() => setTranslateError(null), 6000);
+    } finally {
+      setTranslating(false);
+    }
+  };
+
   const [scoreError, setScoreError] = useState<string | null>(null);
   const scoreMut = useMutation({
     mutationFn: () => scoreJob(jobId),
@@ -542,7 +624,11 @@ export default function JobDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['job', jobId] });
       queryClient.invalidateQueries({ queryKey: ['jobScore', jobId] });
     },
-    onError: (e: Error) => { setScoreError(e?.message || 'Ошибка оценки'); setTimeout(() => setScoreError(null), 5000); },
+    onError: (e: any) => {
+      const detail = e?.response?.data?.detail || e?.message || 'Ошибка оценки';
+      setScoreError(typeof detail === 'string' ? detail : JSON.stringify(detail));
+      setTimeout(() => setScoreError(null), 8000);
+    },
   });
 
   // Fetch detailed score with LLM reasoning (must be before early returns to satisfy React hooks rules)
@@ -682,8 +768,27 @@ export default function JobDetailPage() {
                     </span>
                   ))}
                 </div>
-                <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                  {job.description}
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <span className="text-xs font-medium text-gray-500 uppercase">Описание</span>
+                  <button
+                    onClick={handleTranslateDescription}
+                    disabled={translating}
+                    className={clsx(
+                      'text-xs px-3 py-1.5 rounded-lg border transition-colors inline-flex items-center gap-1',
+                      showDescRu
+                        ? 'bg-brand-50 border-brand-200 text-brand-600'
+                        : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                    )}
+                  >
+                    <Languages className="w-3 h-3" />
+                    {translating ? 'Перевод...' : showDescRu ? 'Русский (RU)' : 'Перевести на RU'}
+                  </button>
+                </div>
+                {translateError && (
+                  <OpenAIErrorCard error={translateError} onClose={() => setTranslateError(null)} />
+                )}
+                <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed mt-2">
+                  {showDescRu && descriptionRu ? descriptionRu : job.description}
                 </p>
               </div>
 
@@ -719,6 +824,9 @@ export default function JobDetailPage() {
                     <Sparkles className="w-4 h-4" />
                     {scoreMut.isPending ? 'Оценка...' : 'Оценить через AI'}
                   </button>
+                  {scoreError && (
+                    <OpenAIErrorCard error={scoreError} onClose={() => setScoreError(null)} />
+                  )}
                 </div>
               )}
 

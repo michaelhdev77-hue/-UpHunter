@@ -40,6 +40,7 @@ class ScoreAllResponse(BaseModel):
     scored: int
     failed: int
     job_ids: list[int]
+    error: Optional[str] = None
 
 
 class ScoringConfigSchema(BaseModel):
@@ -168,6 +169,115 @@ async def update_scoring_settings(
     return ScoringConfigSchema.model_validate(config)
 
 
+@router.post("/score-all", response_model=ScoreAllResponse)
+async def score_all_jobs(db: AsyncSession = Depends(get_db)):
+    """Score all jobs with status 'discovered'."""
+    scoring_config = await get_scoring_config(db)
+    scored_ids: list[int] = []
+    failed_count = 0
+    last_error: str | None = None
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        # Fetch discovered jobs from Jobs Service
+        try:
+            resp = await client.get(
+                f"{settings.jobs_service_url}",
+                params={"status": "discovered", "limit": 100},
+            )
+            resp.raise_for_status()
+            jobs_response = resp.json()
+        except Exception:
+            logger.exception("Failed to fetch discovered jobs")
+            raise HTTPException(status_code=502, detail="Jobs service unavailable")
+
+        items = jobs_response.get("items", [])
+        if not items:
+            return ScoreAllResponse(scored=0, failed=0, job_ids=[])
+
+        # Fetch team profile once
+        try:
+            team_profile = await _fetch_team_profile(client)
+        except Exception:
+            team_profile = {
+                "skills_description": "Full-stack development",
+                "portfolio_description": "Web applications and APIs",
+                "hourly_rate_min": 30,
+                "hourly_rate_max": 80,
+            }
+
+        for job_data in items:
+            job_id_item = job_data.get("id")
+            if job_id_item is None:
+                failed_count += 1
+                continue
+
+            try:
+                # Analyze client
+                try:
+                    client_analysis = await _analyze_client(client, job_data)
+                except Exception:
+                    client_analysis = {"risk_score": 50.0}
+
+                client_risk = float(client_analysis.get("risk_score", 50.0))
+
+                client_data = {
+                    "rating": job_data.get("client_rating"),
+                    "total_spent": job_data.get("client_total_spent"),
+                    "hire_rate": job_data.get("client_hire_rate"),
+                    "payment_verified": job_data.get("client_payment_verified"),
+                    "jobs_posted": job_data.get("client_jobs_posted"),
+                    "country": job_data.get("client_country"),
+                }
+
+                try:
+                    scores = await score_job(job_data, client_data, team_profile, scoring_config)
+                except Exception as exc:
+                    logger.warning("Scoring failed for job %s: %s", job_id_item, exc)
+                    failed_count += 1
+                    last_error = str(exc)
+                    continue
+
+                # Upsert score
+                existing = await db.execute(
+                    select(JobScore).where(JobScore.job_id == job_id_item)
+                )
+                row = existing.scalar_one_or_none()
+                if row is None:
+                    row = JobScore(job_id=job_id_item)
+                    db.add(row)
+
+                row.skill_match = scores["skill_match"]
+                row.budget_fit = scores["budget_fit"]
+                row.scope_clarity = scores["scope_clarity"]
+                row.win_probability = scores["win_probability"]
+                row.client_risk = client_risk
+                row.overall_score = scores["overall_score"]
+                row.llm_reasoning = scores["reasoning"]
+
+                await db.commit()
+
+                # Update job status
+                try:
+                    score_details = {
+                        "skill_match": scores["skill_match"],
+                        "budget_fit": scores["budget_fit"],
+                        "scope_clarity": scores["scope_clarity"],
+                        "win_probability": scores["win_probability"],
+                        "client_risk": client_risk,
+                    }
+                    await _update_job_status(client, job_id_item, scores["overall_score"], score_details)
+                except Exception:
+                    logger.warning("Failed to update status for job %s", job_id_item)
+
+                scored_ids.append(job_id_item)
+
+            except Exception:
+                logger.exception("Failed to score job %s", job_id_item)
+                failed_count += 1
+
+    return ScoreAllResponse(scored=len(scored_ids), failed=failed_count, job_ids=scored_ids, error=last_error)
+
+
 @router.post("/score/{job_id}", response_model=ScoreResponse)
 async def score_job_endpoint(job_id: int, db: AsyncSession = Depends(get_db)):
     """Score a single job using AI analysis."""
@@ -216,9 +326,10 @@ async def score_job_endpoint(job_id: int, db: AsyncSession = Depends(get_db)):
         }
 
         # 5. Call AI scorer
-        scores = await score_job(job_data, client_data, team_profile, scoring_config)
-        if scores is None:
-            raise HTTPException(status_code=500, detail="AI scoring failed")
+        try:
+            scores = await score_job(job_data, client_data, team_profile, scoring_config)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
 
         # 6. Save to DB (upsert)
         existing = await db.execute(
@@ -285,106 +396,3 @@ async def get_score(job_id: int, db: AsyncSession = Depends(get_db)):
     return _job_score_to_response(job_id, row)
 
 
-@router.post("/score-all", response_model=ScoreAllResponse)
-async def score_all_jobs(db: AsyncSession = Depends(get_db)):
-    """Score all jobs with status 'discovered'."""
-    scoring_config = await get_scoring_config(db)
-    scored_ids: list[int] = []
-    failed_count = 0
-
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        # Fetch discovered jobs from Jobs Service
-        try:
-            resp = await client.get(
-                f"{settings.jobs_service_url}",
-                params={"status": "discovered", "limit": 100},
-            )
-            resp.raise_for_status()
-            jobs_response = resp.json()
-        except Exception:
-            logger.exception("Failed to fetch discovered jobs")
-            raise HTTPException(status_code=502, detail="Jobs service unavailable")
-
-        items = jobs_response.get("items", [])
-        if not items:
-            return ScoreAllResponse(scored=0, failed=0, job_ids=[])
-
-        # Fetch team profile once
-        try:
-            team_profile = await _fetch_team_profile(client)
-        except Exception:
-            team_profile = {
-                "skills_description": "Full-stack development",
-                "portfolio_description": "Web applications and APIs",
-                "hourly_rate_min": 30,
-                "hourly_rate_max": 80,
-            }
-
-        for job_data in items:
-            job_id = job_data.get("id")
-            if job_id is None:
-                failed_count += 1
-                continue
-
-            try:
-                # Analyze client
-                try:
-                    client_analysis = await _analyze_client(client, job_data)
-                except Exception:
-                    client_analysis = {"risk_score": 50.0}
-
-                client_risk = float(client_analysis.get("risk_score", 50.0))
-
-                client_data = {
-                    "rating": job_data.get("client_rating"),
-                    "total_spent": job_data.get("client_total_spent"),
-                    "hire_rate": job_data.get("client_hire_rate"),
-                    "payment_verified": job_data.get("client_payment_verified"),
-                    "jobs_posted": job_data.get("client_jobs_posted"),
-                    "country": job_data.get("client_country"),
-                }
-
-                scores = await score_job(job_data, client_data, team_profile, scoring_config)
-                if scores is None:
-                    failed_count += 1
-                    continue
-
-                # Upsert score
-                existing = await db.execute(
-                    select(JobScore).where(JobScore.job_id == job_id)
-                )
-                row = existing.scalar_one_or_none()
-                if row is None:
-                    row = JobScore(job_id=job_id)
-                    db.add(row)
-
-                row.skill_match = scores["skill_match"]
-                row.budget_fit = scores["budget_fit"]
-                row.scope_clarity = scores["scope_clarity"]
-                row.win_probability = scores["win_probability"]
-                row.client_risk = client_risk
-                row.overall_score = scores["overall_score"]
-                row.llm_reasoning = scores["reasoning"]
-
-                await db.commit()
-
-                # Update job status
-                try:
-                    score_details = {
-                        "skill_match": scores["skill_match"],
-                        "budget_fit": scores["budget_fit"],
-                        "scope_clarity": scores["scope_clarity"],
-                        "win_probability": scores["win_probability"],
-                        "client_risk": client_risk,
-                    }
-                    await _update_job_status(client, job_id, scores["overall_score"], score_details)
-                except Exception:
-                    logger.warning("Failed to update status for job %s", job_id)
-
-                scored_ids.append(job_id)
-
-            except Exception:
-                logger.exception("Failed to score job %s", job_id)
-                failed_count += 1
-
-    return ScoreAllResponse(scored=len(scored_ids), failed=failed_count, job_ids=scored_ids)

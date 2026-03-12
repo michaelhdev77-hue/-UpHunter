@@ -29,6 +29,28 @@ async def lifespan(app: FastAPI):
     # Startup: create tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Migrate: remove 'approved' from jobstatus enum if it still exists
+    try:
+        async with engine.begin() as conn:
+            from sqlalchemy import text
+            row = await conn.execute(text(
+                "SELECT 1 FROM pg_enum WHERE enumlabel = 'approved' "
+                "AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'jobstatus')"
+            ))
+            if row.scalar():
+                await conn.execute(text(
+                    "UPDATE jobs SET status = 'under_review' "
+                    "WHERE status::text = 'approved'"
+                ))
+                await conn.execute(text(
+                    "DELETE FROM pg_enum WHERE enumlabel = 'approved' "
+                    "AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'jobstatus')"
+                ))
+                logger.info("Migrated: removed 'approved' from jobstatus enum")
+    except Exception:
+        logger.exception("Migration warning: failed to clean up 'approved' enum value (non-fatal)")
+
     logger.info("Jobs Service started — tables ready")
 
     # Start Kafka producer

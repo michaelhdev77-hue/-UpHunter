@@ -93,8 +93,79 @@ async def _get_approved_examples(db: AsyncSession, limit: int = 3) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Endpoints
+# Endpoints — static paths MUST come before /{param} to avoid shadowing
 # ---------------------------------------------------------------------------
+
+
+class TranslateRequest(BaseModel):
+    text: str
+
+
+@router.post("/translate")
+async def translate_text(body: TranslateRequest, db: AsyncSession = Depends(get_db)):
+    """Translate arbitrary text to Russian using the configured OpenAI model."""
+    config = await get_letter_config(db)
+    try:
+        translated = await translate_to_russian(body.text, config=config)
+    except Exception as exc:
+        logger.exception("Translation failed")
+        raise HTTPException(status_code=502, detail=f"Translation failed: {exc}")
+    return {"translated": translated}
+
+
+@router.get("/settings")
+async def get_letter_settings(db: AsyncSession = Depends(get_db)):
+    """Get current letter generation settings."""
+    result = await db.execute(select(LetterConfig).where(LetterConfig.id == 1))
+    config = result.scalar_one_or_none()
+    if not config:
+        return LetterConfigSchema()
+    return LetterConfigSchema.model_validate(config)
+
+
+@router.put("/settings")
+async def update_letter_settings(body: LetterConfigUpdate, db: AsyncSession = Depends(get_db)):
+    """Update letter generation settings."""
+    result = await db.execute(select(LetterConfig).where(LetterConfig.id == 1))
+    config = result.scalar_one_or_none()
+    if not config:
+        config = LetterConfig(id=1)
+        db.add(config)
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(config, field, value)
+    await db.commit()
+    await db.refresh(config)
+    return LetterConfigSchema.model_validate(config)
+
+
+@router.get("/stats/styles")
+async def style_stats(db: AsyncSession = Depends(get_db)):
+    """A/B testing stats: approval rates by cover letter style."""
+    result = await db.execute(
+        select(
+            CoverLetter.style,
+            CoverLetter.status,
+            sa_func.count(CoverLetter.id),
+        )
+        .group_by(CoverLetter.style, CoverLetter.status)
+    )
+    rows = result.all()
+
+    # Pivot: style -> {total, approved, rejected, draft, approval_rate}
+    stats: dict[str, dict] = {}
+    for style, status, count in rows:
+        style_name = style or "professional"
+        if style_name not in stats:
+            stats[style_name] = {"total": 0, "approved": 0, "rejected": 0, "draft": 0}
+        stats[style_name]["total"] += count
+        stats[style_name][status.value if hasattr(status, 'value') else status] += count
+
+    for style_name, data in stats.items():
+        decided = data["approved"] + data["rejected"]
+        data["approval_rate"] = round(data["approved"] / decided * 100, 1) if decided > 0 else None
+
+    return stats
+
 
 @router.post("/generate", response_model=CoverLetterResponse)
 async def generate_cover_letter_endpoint(
@@ -130,14 +201,18 @@ async def generate_cover_letter_endpoint(
     letter_config = await get_letter_config(db)
 
     # 4 — generate cover letter
-    content_original = await generate_cover_letter(
-        job=job,
-        team_profile=team_profile,
-        language=language,
-        style=style,
-        approved_examples=approved_examples,
-        config=letter_config,
-    )
+    try:
+        content_original = await generate_cover_letter(
+            job=job,
+            team_profile=team_profile,
+            language=language,
+            style=style,
+            approved_examples=approved_examples,
+            config=letter_config,
+        )
+    except Exception as exc:
+        logger.exception("Cover letter generation failed for job %s", body.job_id)
+        raise HTTPException(status_code=502, detail=f"Ошибка генерации письма (OpenAI): {exc}")
 
     # 5 — translate job description to Russian (informational hint, logged)
     try:
@@ -254,15 +329,19 @@ async def regenerate_cover_letter(
     letter_config = await get_letter_config(db)
 
     # Generate with optional extra instructions
-    content_original = await generate_cover_letter(
-        job=job,
-        team_profile=team_profile,
-        language=language,
-        style=style,
-        extra_instructions=body.instructions,
-        approved_examples=approved_examples,
-        config=letter_config,
-    )
+    try:
+        content_original = await generate_cover_letter(
+            job=job,
+            team_profile=team_profile,
+            language=language,
+            style=style,
+            extra_instructions=body.instructions,
+            approved_examples=approved_examples,
+            config=letter_config,
+        )
+    except Exception as exc:
+        logger.exception("Cover letter regeneration failed for letter %s", letter_id)
+        raise HTTPException(status_code=502, detail=f"Ошибка генерации письма (OpenAI): {exc}")
 
     # Translate to Russian
     try:
@@ -317,57 +396,3 @@ async def reject_cover_letter(letter_id: int, db: AsyncSession = Depends(get_db)
     await db.commit()
     await db.refresh(letter)
     return CoverLetterResponse.model_validate(letter)
-
-
-@router.get("/settings")
-async def get_letter_settings(db: AsyncSession = Depends(get_db)):
-    """Get current letter generation settings."""
-    result = await db.execute(select(LetterConfig).where(LetterConfig.id == 1))
-    config = result.scalar_one_or_none()
-    if not config:
-        return LetterConfigSchema()
-    return LetterConfigSchema.model_validate(config)
-
-
-@router.put("/settings")
-async def update_letter_settings(body: LetterConfigUpdate, db: AsyncSession = Depends(get_db)):
-    """Update letter generation settings."""
-    result = await db.execute(select(LetterConfig).where(LetterConfig.id == 1))
-    config = result.scalar_one_or_none()
-    if not config:
-        config = LetterConfig(id=1)
-        db.add(config)
-    for field, value in body.model_dump(exclude_unset=True).items():
-        setattr(config, field, value)
-    await db.commit()
-    await db.refresh(config)
-    return LetterConfigSchema.model_validate(config)
-
-
-@router.get("/stats/styles")
-async def style_stats(db: AsyncSession = Depends(get_db)):
-    """A/B testing stats: approval rates by cover letter style."""
-    result = await db.execute(
-        select(
-            CoverLetter.style,
-            CoverLetter.status,
-            sa_func.count(CoverLetter.id),
-        )
-        .group_by(CoverLetter.style, CoverLetter.status)
-    )
-    rows = result.all()
-
-    # Pivot: style -> {total, approved, rejected, draft, approval_rate}
-    stats: dict[str, dict] = {}
-    for style, status, count in rows:
-        style_name = style or "professional"
-        if style_name not in stats:
-            stats[style_name] = {"total": 0, "approved": 0, "rejected": 0, "draft": 0}
-        stats[style_name]["total"] += count
-        stats[style_name][status.value if hasattr(status, 'value') else status] += count
-
-    for style_name, data in stats.items():
-        decided = data["approved"] + data["rejected"]
-        data["approval_rate"] = round(data["approved"] / decided * 100, 1) if decided > 0 else None
-
-    return stats

@@ -38,7 +38,6 @@ const stageBg: Record<string, string> = {
   scored: 'bg-yellow-500',
   letter_ready: 'bg-purple-500',
   under_review: 'bg-indigo-500',
-  approved: 'bg-green-500',
   applied: 'bg-emerald-500',
   response: 'bg-teal-500',
   hired: 'bg-green-600',
@@ -60,7 +59,6 @@ function FunnelChart({ stages }: { stages: FunnelStage[] }) {
                 scored: 'Оценена',
                 letter_ready: 'Письмо готово',
                 under_review: 'На проверке',
-                approved: 'Одобрена',
                 applied: 'Отклик',
                 response: 'Ответ',
                 hired: 'Нанят',
@@ -435,7 +433,6 @@ export default function AnalyticsPage() {
                       {'→ ' + ({
                         discovered_to_scored: 'оценена',
                         discovered_to_letter_ready: 'письмо готово',
-                        discovered_to_approved: 'одобрена',
                         discovered_to_applied: 'отклик',
                         discovered_to_response: 'ответ',
                         discovered_to_hired: 'нанят',

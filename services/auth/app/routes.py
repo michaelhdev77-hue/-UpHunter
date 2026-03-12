@@ -1,6 +1,7 @@
 """Auth Service API routes — login, Upwork OAuth, team profile."""
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlencode
@@ -22,6 +23,9 @@ from app.models import (
     TeamProfileSchema,
     TeamProfileUpdate,
     TokenResponse,
+    UpworkOAuthConfig,
+    UpworkOAuthConfigSchema,
+    UpworkOAuthConfigUpdate,
     UpworkToken,
     User,
     UserResponse,
@@ -111,21 +115,99 @@ async def update_me(
 # ── Upwork OAuth 2.0 ────────────────────────────────────────────────────────
 
 
+async def _get_upwork_credentials(db: AsyncSession) -> tuple[str, str, str]:
+    """Get Upwork OAuth credentials: DB first, then ENV fallback."""
+    result = await db.execute(select(UpworkOAuthConfig).limit(1))
+    cfg = result.scalar_one_or_none()
+    if cfg and cfg.client_id and cfg.client_secret:
+        return cfg.client_id, cfg.client_secret, cfg.redirect_uri
+    env_id = settings.upwork_client_id
+    env_secret = settings.upwork_client_secret
+    if env_id and env_id != "CHANGE_ME" and env_secret and env_secret != "CHANGE_ME":
+        return env_id, env_secret, settings.upwork_redirect_uri
+    return "", "", settings.upwork_redirect_uri
+
+
+@router.get("/upwork/settings", response_model=UpworkOAuthConfigSchema)
+async def get_upwork_settings(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get current Upwork OAuth config (client_secret is masked)."""
+    result = await db.execute(select(UpworkOAuthConfig).limit(1))
+    cfg = result.scalar_one_or_none()
+    if cfg and cfg.client_id:
+        masked_secret = cfg.client_secret[:4] + "****" if len(cfg.client_secret) > 4 else "****"
+        return UpworkOAuthConfigSchema(
+            client_id=cfg.client_id,
+            client_secret=masked_secret,
+            redirect_uri=cfg.redirect_uri,
+            configured=True,
+        )
+    env_id = settings.upwork_client_id
+    env_secret = settings.upwork_client_secret
+    if env_id and env_id not in ("", "CHANGE_ME"):
+        return UpworkOAuthConfigSchema(
+            client_id=env_id,
+            client_secret="****" if env_secret and env_secret != "CHANGE_ME" else "",
+            redirect_uri=settings.upwork_redirect_uri,
+            configured=bool(env_secret and env_secret != "CHANGE_ME"),
+        )
+    return UpworkOAuthConfigSchema()
+
+
+@router.put("/upwork/settings", response_model=UpworkOAuthConfigSchema)
+async def update_upwork_settings(
+    body: UpworkOAuthConfigUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Save Upwork OAuth credentials to DB."""
+    result = await db.execute(select(UpworkOAuthConfig).limit(1))
+    cfg = result.scalar_one_or_none()
+    if not cfg:
+        cfg = UpworkOAuthConfig()
+        db.add(cfg)
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(cfg, field, value)
+    await db.commit()
+    await db.refresh(cfg)
+    masked_secret = cfg.client_secret[:4] + "****" if len(cfg.client_secret) > 4 else "****"
+    return UpworkOAuthConfigSchema(
+        client_id=cfg.client_id,
+        client_secret=masked_secret,
+        redirect_uri=cfg.redirect_uri,
+        configured=bool(cfg.client_id and cfg.client_secret),
+    )
+
+
 @router.get("/upwork/authorize")
-async def upwork_authorize(user: User = Depends(get_current_user)):
-    """Redirect to Upwork OAuth consent page (requires auth)."""
-    if not settings.upwork_client_id:
+async def upwork_authorize(
+    token: str = Query(default=""),
+    db: AsyncSession = Depends(get_db),
+):
+    """Redirect to Upwork OAuth consent page."""
+    # Auth via query param (browser redirect can't send Authorization header)
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=["HS256"])
+        user_id = int(payload["sub"])
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    client_id, client_secret, redirect_uri = await _get_upwork_credentials(db)
+    if not client_id:
         raise HTTPException(
             status_code=503,
-            detail="Upwork OAuth not configured — set UPWORK_CLIENT_ID",
+            detail="Upwork OAuth not configured — добавьте Client ID и Client Secret в настройках",
         )
-    # Pass user_id in OAuth state so callback can associate the token
     params = urlencode(
         {
-            "client_id": settings.upwork_client_id,
+            "client_id": client_id,
             "response_type": "code",
-            "redirect_uri": settings.upwork_redirect_uri,
-            "state": str(user.id),
+            "redirect_uri": redirect_uri,
+            "state": str(user_id),
         }
     )
     return RedirectResponse(f"{settings.upwork_auth_url}?{params}")
@@ -138,15 +220,16 @@ async def upwork_callback(
     db: AsyncSession = Depends(get_db),
 ):
     """Exchange authorization code for access token."""
+    client_id, client_secret, redirect_uri = await _get_upwork_credentials(db)
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             settings.upwork_token_url,
             data={
                 "grant_type": "authorization_code",
                 "code": code,
-                "client_id": settings.upwork_client_id,
-                "client_secret": settings.upwork_client_secret,
-                "redirect_uri": settings.upwork_redirect_uri,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": redirect_uri,
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
@@ -189,7 +272,8 @@ async def upwork_callback(
     await db.commit()
 
     # Redirect to frontend
-    return RedirectResponse("http://localhost:3000/settings?upwork=connected")
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3002")
+    return RedirectResponse(f"{frontend_url}/settings?upwork=connected")
 
 
 @router.get("/upwork/token")
@@ -234,12 +318,28 @@ async def get_upwork_token(
 
 @router.get("/team-profile", response_model=Optional[TeamProfileSchema])
 async def get_team_profile(
-    user: User = Depends(get_current_user),
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(TeamProfile).where(TeamProfile.user_id == user.id).limit(1)
-    )
+    """Get team profile. Authenticated = user's profile. No auth = latest profile (inter-service)."""
+    user_id = None
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        try:
+            payload = jwt.decode(auth[7:], settings.secret_key, algorithms=["HS256"])
+            user_id = int(payload["sub"])
+        except Exception:
+            pass
+
+    if user_id:
+        result = await db.execute(
+            select(TeamProfile).where(TeamProfile.user_id == user_id).limit(1)
+        )
+    else:
+        # Inter-service call: return latest profile
+        result = await db.execute(
+            select(TeamProfile).order_by(TeamProfile.id.desc()).limit(1)
+        )
     profile = result.scalar_one_or_none()
     if not profile:
         return None

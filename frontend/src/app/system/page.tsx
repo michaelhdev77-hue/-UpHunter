@@ -248,7 +248,7 @@ export default function SystemPage() {
                 </div>
                 {jobsSummary?.by_status && Object.entries(jobsSummary.by_status).map(([status, count]) => (
                   <div key={status} className="flex items-center justify-between py-1">
-                    <span className="text-xs text-gray-500 capitalize">{{ discovered: 'Обнаружена', scored: 'Оценена', letter_ready: 'Письмо готово', under_review: 'На проверке', approved: 'Одобрена', applied: 'Отклик', response: 'Ответ', hired: 'Нанят', rejected: 'Отклонена' }[status] || status.replace('_', ' ')}</span>
+                    <span className="text-xs text-gray-500 capitalize">{{ discovered: 'Обнаружена', scored: 'Оценена', letter_ready: 'Письмо готово', under_review: 'На проверке', applied: 'Отклик', response: 'Ответ', hired: 'Нанят', rejected: 'Отклонена' }[status] || status.replace('_', ' ')}</span>
                     <span className="text-xs font-medium text-gray-700">{count as number}</span>
                   </div>
                 ))}

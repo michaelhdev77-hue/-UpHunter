@@ -23,7 +23,7 @@ router = APIRouter()
 
 FUNNEL_ORDER = [
     "discovered", "scored", "letter_ready", "under_review",
-    "approved", "applied", "response", "hired", "rejected",
+    "applied", "response", "hired", "rejected",
 ]
 
 
@@ -139,7 +139,7 @@ async def get_summary(db: AsyncSession = Depends(get_db)):
     discovered = by_stage.get("discovered", 0)
     conversion_rates = {}
     if discovered > 0:
-        for stage in ["scored", "letter_ready", "approved", "applied", "hired"]:
+        for stage in ["scored", "letter_ready", "applied", "hired"]:
             conversion_rates[f"discovered_to_{stage}"] = round(
                 by_stage.get(stage, 0) / discovered * 100, 1
             )
@@ -453,7 +453,7 @@ async def backfill_from_jobs(db: AsyncSession = Depends(get_db)):
     created = 0
 
     # Status to stages mapping: a job in "scored" status has been through "discovered" and "scored"
-    stage_order = ["discovered", "scored", "letter_ready", "under_review", "approved", "applied", "response", "hired"]
+    stage_order = ["discovered", "scored", "letter_ready", "under_review", "applied", "response", "hired"]
 
     for job in items:
         job_id = job.get("id")

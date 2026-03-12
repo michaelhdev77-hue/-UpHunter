@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { LayoutDashboard, Briefcase, Kanban, BarChart3, Settings, LogOut, Users, Activity } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -28,8 +29,8 @@ export default function Sidebar() {
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-60 bg-white border-r border-gray-200 flex flex-col z-30">
-      <div className="px-6 py-5 border-b border-gray-100">
-        <h1 className="text-2xl font-bold text-brand-500">UpHunter</h1>
+      <div className="px-4 py-4 border-b border-gray-100 flex items-center justify-center">
+        <Image src="/logo2.png" alt="UpHunter" width={160} height={178} priority />
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1">

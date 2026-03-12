@@ -107,6 +107,7 @@ export interface JobSummary {
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080',
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -449,6 +450,11 @@ export async function updateLetterSettings(settings: Partial<LetterSettings>): P
   return data;
 }
 
+export async function translateText(text: string): Promise<string> {
+  const { data } = await api.post('/api/letters/translate', { text });
+  return data.translated;
+}
+
 // Poller
 export async function getPollerSettings(): Promise<PollerSettings> {
   const { data } = await api.get('/api/jobs/settings');
@@ -678,6 +684,29 @@ export async function getUpworkTokenStatus(): Promise<{
   expires_at: string | null;
 }> {
   const { data } = await api.get('/api/auth/upwork/token');
+  return data;
+}
+
+// --- Upwork OAuth Settings ---
+
+export interface UpworkOAuthSettings {
+  client_id: string;
+  client_secret: string;
+  redirect_uri: string;
+  configured: boolean;
+}
+
+export async function getUpworkOAuthSettings(): Promise<UpworkOAuthSettings> {
+  const { data } = await api.get('/api/auth/upwork/settings');
+  return data;
+}
+
+export async function updateUpworkOAuthSettings(settings: {
+  client_id?: string;
+  client_secret?: string;
+  redirect_uri?: string;
+}): Promise<UpworkOAuthSettings> {
+  const { data } = await api.put('/api/auth/upwork/settings', settings);
   return data;
 }
 

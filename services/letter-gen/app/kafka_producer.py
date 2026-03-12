@@ -1,6 +1,7 @@
-"""Kafka event producer for Jobs Service."""
+"""Kafka event producer."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -19,16 +20,21 @@ async def start_producer() -> None:
     if not settings.kafka_enabled:
         logger.info("Kafka disabled, skipping producer start")
         return
-    try:
-        _producer = AIOKafkaProducer(
-            bootstrap_servers=settings.kafka_bootstrap_servers,
-            value_serializer=lambda v: json.dumps(v, default=str).encode(),
-        )
-        await _producer.start()
-        logger.info("Kafka producer started")
-    except Exception:
-        logger.exception("Failed to start Kafka producer")
-        _producer = None
+    for attempt in range(5):
+        try:
+            _producer = AIOKafkaProducer(
+                bootstrap_servers=settings.kafka_bootstrap_servers,
+                value_serializer=lambda v: json.dumps(v, default=str).encode(),
+            )
+            await _producer.start()
+            logger.info("Kafka producer started")
+            return
+        except Exception:
+            _producer = None
+            delay = min(2 ** attempt, 30)
+            logger.warning("Kafka producer connect attempt %d/5 failed, retry in %ds", attempt + 1, delay)
+            await asyncio.sleep(delay)
+    logger.error("Kafka producer failed to connect after 5 attempts, events will be dropped")
 
 
 async def stop_producer() -> None:

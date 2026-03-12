@@ -36,7 +36,6 @@ class JobStatus(str, enum.Enum):
     scored = "scored"
     letter_ready = "letter_ready"
     under_review = "under_review"
-    approved = "approved"
     applied = "applied"
     response = "response"
     hired = "hired"
@@ -175,7 +174,7 @@ class JobCreateSchema(BaseModel):
     skills: list[str] = Field(default_factory=list)
     connect_price: Optional[int] = None
     proposals_count: Optional[int] = None
-    detected_language: str = "en"
+    detected_language: Optional[str] = "en"
     upwork_url: Optional[str] = None
     client: Optional[ClientInfoSchema] = None
     posted_at: Optional[datetime] = None
@@ -199,7 +198,7 @@ class JobResponseSchema(BaseModel):
     skills: list[str] = []
     connect_price: Optional[int] = None
     proposals_count: Optional[int] = None
-    detected_language: str = "en"
+    detected_language: Optional[str] = "en"
     upwork_url: Optional[str] = None
     status: JobStatus
     overall_score: Optional[float] = None

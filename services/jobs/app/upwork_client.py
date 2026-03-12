@@ -207,6 +207,10 @@ class UpworkGraphQLClient:
         keywords: list[str] | None = None,
         skills: list[str] | None = None,
         category: str | None = None,
+        contract_type: str | None = None,
+        experience_level: str | None = None,
+        budget_min: float | None = None,
+        budget_max: float | None = None,
         limit: int = 50,
     ) -> list[JobCreateSchema]:
         """Search Upwork marketplace for jobs matching filters."""
@@ -219,6 +223,21 @@ class UpworkGraphQLClient:
             filter_input["searchTerm_eq"] = " ".join(keywords)
         if skills:
             filter_input["skills_any"] = skills
+        if category:
+            filter_input["occupations_any"] = [category]
+        if contract_type:
+            # hourly / fixed
+            filter_input["contractorTier_eq"] = contract_type.upper()
+        if experience_level:
+            # entry / intermediate / expert
+            tier_map = {"entry": 1, "intermediate": 2, "expert": 3}
+            tier = tier_map.get(experience_level.lower())
+            if tier:
+                filter_input["contractorTier"] = tier
+        if budget_min is not None:
+            filter_input["amountMin"] = budget_min
+        if budget_max is not None:
+            filter_input["amountMax"] = budget_max
 
         variables = {
             "filter": filter_input,

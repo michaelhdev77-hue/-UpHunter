@@ -13,14 +13,13 @@ import { clsx } from 'clsx';
 import Link from 'next/link';
 
 const statusLabels: Record<string, string> = {
-  discovered: 'Обнаружена',
+  discovered: 'Новая',
   scored: 'Оценена',
-  letter_ready: 'Письмо готово',
+  letter_ready: 'Черновик',
   under_review: 'На проверке',
-  approved: 'Одобрена',
   applied: 'Отклик',
   response: 'Ответ',
-  hired: 'Нанят',
+  hired: 'Контракт',
   rejected: 'Отклонена',
 };
 
@@ -29,7 +28,6 @@ const statusColors: Record<string, string> = {
   scored: 'bg-yellow-100 text-yellow-700',
   letter_ready: 'bg-purple-100 text-purple-700',
   under_review: 'bg-indigo-100 text-indigo-700',
-  approved: 'bg-green-100 text-green-700',
   applied: 'bg-emerald-100 text-emerald-700',
   response: 'bg-teal-100 text-teal-700',
   hired: 'bg-green-200 text-green-800',
@@ -81,14 +79,14 @@ export default function DashboardPage() {
     },
     {
       label: 'Оценено',
-      value: (byStatus.scored ?? 0) + (byStatus.letter_ready ?? 0) + (byStatus.approved ?? 0) + (byStatus.applied ?? 0),
+      value: (byStatus.scored ?? 0) + (byStatus.letter_ready ?? 0) + (byStatus.applied ?? 0),
       icon: CheckCircle,
       color: 'text-yellow-600',
       bg: 'bg-yellow-50',
     },
     {
       label: 'Писем готово',
-      value: (byStatus.letter_ready ?? 0) + (byStatus.approved ?? 0),
+      value: byStatus.letter_ready ?? 0,
       icon: FileText,
       color: 'text-purple-600',
       bg: 'bg-purple-50',
@@ -241,7 +239,6 @@ export default function DashboardPage() {
                                 stage === 'rejected' ? 'bg-red-400' :
                                 stage === 'hired' ? 'bg-green-500' :
                                 stage === 'applied' ? 'bg-emerald-400' :
-                                stage === 'approved' ? 'bg-green-400' :
                                 stage === 'letter_ready' ? 'bg-purple-400' :
                                 stage === 'scored' ? 'bg-yellow-400' :
                                 'bg-blue-400',
