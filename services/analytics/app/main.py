@@ -1,11 +1,19 @@
 """Analytics Service — main FastAPI application."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from app.db import engine
 from app.models import Base
@@ -20,7 +28,14 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     logger.info("Analytics Service started — tables ready")
+
+    # Start Kafka consumer in background
+    from app.kafka_consumer import run_consumer
+    consumer_task = asyncio.create_task(run_consumer())
+
     yield
+
+    consumer_task.cancel()
     logger.info("Analytics Service stopped")
 
 
@@ -29,6 +44,13 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# OpenTelemetry tracing
+_resource = Resource.create({"service.name": "uphunter-analytics"})
+_provider = TracerProvider(resource=_resource)
+_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint="http://jaeger:4317", insecure=True)))
+trace.set_tracer_provider(_provider)
+FastAPIInstrumentor.instrument_app(app)
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,6 +61,11 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="", tags=["analytics"])
+
+
+# Prometheus metrics
+from prometheus_fastapi_instrumentator import Instrumentator
+Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 
 @app.get("/health")

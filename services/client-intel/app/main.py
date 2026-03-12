@@ -7,6 +7,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
 from app.db import engine
 from app.models import Base
 from app.routes import router
@@ -30,6 +37,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# OpenTelemetry tracing
+_resource = Resource.create({"service.name": "uphunter-client-intel"})
+_provider = TracerProvider(resource=_resource)
+_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint="http://jaeger:4317", insecure=True)))
+trace.set_tracer_provider(_provider)
+FastAPIInstrumentor.instrument_app(app)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -44,3 +58,7 @@ async def health():
 
 
 app.include_router(router, prefix="", tags=["client-intel"])
+
+# Prometheus metrics
+from prometheus_fastapi_instrumentator import Instrumentator
+Instrumentator().instrument(app).expose(app, endpoint="/metrics")

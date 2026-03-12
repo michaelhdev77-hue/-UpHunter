@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, func
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import DeclarativeBase
 
 
@@ -42,6 +42,7 @@ class TeamProfile(Base):
     __tablename__ = "team_profiles"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     name = Column(String(200), nullable=False, default="Default Team")
     skills_description = Column(Text, default="ДОБАВИМ ПОЗЖЕ")
     portfolio_description = Column(Text, default="ДОБАВИМ ПОЗЖЕ")
@@ -83,6 +84,12 @@ class TeamProfileSchema(BaseModel):
     hourly_rate_max: int
 
     model_config = {"from_attributes": True}
+
+
+class UserUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    current_password: Optional[str] = None
+    new_password: Optional[str] = None
 
 
 class TeamProfileUpdate(BaseModel):

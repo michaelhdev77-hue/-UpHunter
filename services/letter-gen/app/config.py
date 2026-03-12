@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     openai_temp_cover_letter: float = 0.7
     openai_temp_translation: float = 0.3
     jobs_service_url: str = "http://jobs:8101"
+    auth_service_url: str = "http://auth:8105"
 
     class Config:
         env_file = ".env"

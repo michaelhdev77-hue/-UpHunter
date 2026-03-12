@@ -9,6 +9,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
 from app.db import engine, async_session
 from app.models import Base, User, TeamProfile
 from app.routes import router
@@ -35,19 +42,26 @@ async def lifespan(app: FastAPI):
             await db.commit()
             logger.info("Seeded default admin user: admin@uphunter.local / admin")
 
-        # Seed default team profile
+        # Seed default team profile for admin user
         result = await db.execute(select(TeamProfile).limit(1))
         if not result.scalar_one_or_none():
-            db.add(
-                TeamProfile(
-                    name="Default Team",
-                    skills_description="ДОБАВИМ ПОЗЖЕ",
-                    portfolio_description="ДОБАВИМ ПОЗЖЕ",
-                    cover_letter_style="ДОБАВИМ ПОЗЖЕ",
-                )
+            # Get admin user id
+            admin_result = await db.execute(
+                select(User).where(User.email == "admin@uphunter.local")
             )
-            await db.commit()
-            logger.info("Seeded default team profile")
+            admin = admin_result.scalar_one_or_none()
+            if admin:
+                db.add(
+                    TeamProfile(
+                        user_id=admin.id,
+                        name="Default Team",
+                        skills_description="ДОБАВИМ ПОЗЖЕ",
+                        portfolio_description="ДОБАВИМ ПОЗЖЕ",
+                        cover_letter_style="ДОБАВИМ ПОЗЖЕ",
+                    )
+                )
+                await db.commit()
+                logger.info("Seeded default team profile for admin user")
 
     logger.info("Auth Service started")
     yield
@@ -60,6 +74,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# OpenTelemetry tracing
+_resource = Resource.create({"service.name": "uphunter-auth"})
+_provider = TracerProvider(resource=_resource)
+_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint="http://jaeger:4317", insecure=True)))
+trace.set_tracer_provider(_provider)
+FastAPIInstrumentor.instrument_app(app)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -69,6 +90,11 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="", tags=["auth"])
+
+
+# Prometheus metrics
+from prometheus_fastapi_instrumentator import Instrumentator
+Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 
 @app.get("/health")

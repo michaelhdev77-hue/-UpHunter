@@ -8,6 +8,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
 from app.db import engine
 from app.models import Base
 from app.poller import run_poller
@@ -24,6 +31,10 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     logger.info("Jobs Service started — tables ready")
 
+    # Start Kafka producer
+    from app.kafka_producer import start_producer, stop_producer
+    await start_producer()
+
     # Start background poller
     poller_task = asyncio.create_task(run_poller())
 
@@ -35,6 +46,7 @@ async def lifespan(app: FastAPI):
         await poller_task
     except asyncio.CancelledError:
         pass
+    await stop_producer()
     logger.info("Jobs Service stopped")
 
 
@@ -43,6 +55,13 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# OpenTelemetry tracing
+_resource = Resource.create({"service.name": "uphunter-jobs"})
+_provider = TracerProvider(resource=_resource)
+_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint="http://jaeger:4317", insecure=True)))
+trace.set_tracer_provider(_provider)
+FastAPIInstrumentor.instrument_app(app)
 
 app.add_middleware(
     CORSMiddleware,
@@ -58,3 +77,7 @@ async def health():
 
 
 app.include_router(router, prefix="", tags=["jobs"])
+
+# Prometheus metrics
+from prometheus_fastapi_instrumentator import Instrumentator
+Instrumentator().instrument(app).expose(app, endpoint="/metrics")

@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o"
     openai_temp_scoring: float = 0.3
     client_intel_service_url: str = "http://client-intel:8103"
+    auth_service_url: str = "http://auth:8105"
+    jobs_service_url: str = "http://jobs:8101"
 
     class Config:
         env_file = ".env"

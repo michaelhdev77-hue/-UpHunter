@@ -69,6 +69,32 @@ class ClientResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ClientListResponse(BaseModel):
+    items: list[ClientResponse]
+    total: int
+
+
+class RiskConfig(Base):
+    """Configurable risk scoring weights and red-flag thresholds (singleton id=1)."""
+    __tablename__ = "risk_config"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    # Scoring weights (must sum to 1.0)
+    weight_payment_verified = Column(Float, nullable=False, default=0.25)
+    weight_total_spent = Column(Float, nullable=False, default=0.20)
+    weight_hire_rate = Column(Float, nullable=False, default=0.15)
+    weight_rating = Column(Float, nullable=False, default=0.15)
+    weight_reviews = Column(Float, nullable=False, default=0.10)
+    weight_account_age = Column(Float, nullable=False, default=0.10)
+    weight_location = Column(Float, nullable=False, default=0.05)
+    # Red-flag thresholds
+    flag_hire_rate_below = Column(Float, nullable=False, default=20.0)
+    flag_rating_below = Column(Float, nullable=False, default=3.0)
+    flag_account_age_days = Column(Integer, nullable=False, default=30)
+    flag_no_reviews_min_jobs = Column(Integer, nullable=False, default=10)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class ClientRiskScore(BaseModel):
     upwork_uid: str
     risk_score: float

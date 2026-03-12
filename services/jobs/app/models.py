@@ -118,6 +118,15 @@ class JobScore(Base):
     scored_at = Column(DateTime, server_default=func.now())
 
 
+class PollerConfig(Base):
+    __tablename__ = "poller_config"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    poll_interval_seconds = Column(Integer, nullable=False, default=300)
+    max_jobs_per_poll = Column(Integer, nullable=False, default=50)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class SearchFilter(Base):
     __tablename__ = "search_filters"
 
@@ -255,3 +264,5 @@ class SearchFilterResponse(BaseModel):
 class StatusUpdateSchema(BaseModel):
     status: JobStatus
     notes: Optional[str] = None
+    overall_score: Optional[float] = None
+    score_details: Optional[dict] = None

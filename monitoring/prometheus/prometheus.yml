@@ -1,0 +1,34 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "auth"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["auth:8105"]
+
+  - job_name: "jobs"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["jobs:8101"]
+
+  - job_name: "ai-scoring"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["ai-scoring:8102"]
+
+  - job_name: "client-intel"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["client-intel:8103"]
+
+  - job_name: "letter-gen"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["letter-gen:8104"]
+
+  - job_name: "analytics"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["analytics:8106"]
