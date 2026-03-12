@@ -7,7 +7,7 @@ services:
 
   db:
     image: postgres:16
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "5438:5432"
     environment:
@@ -25,7 +25,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "6381:6379"
     healthcheck:
@@ -36,14 +36,14 @@ services:
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
-    restart: unless-stopped
+    restart: "no"
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
-    restart: unless-stopped
+    restart: "no"
     depends_on:
       - zookeeper
     ports:
@@ -58,7 +58,7 @@ services:
 
   nginx:
     image: nginx:alpine
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "8080:80"
     volumes:
@@ -69,7 +69,7 @@ services:
 
   prometheus:
     image: prom/prometheus:v2.51.0
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "9090:9090"
     volumes:
@@ -81,7 +81,7 @@ services:
 
   grafana:
     image: grafana/grafana:10.4.0
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "3003:3000"
     environment:
@@ -97,7 +97,7 @@ services:
 
   jaeger:
     image: jaegertracing/all-in-one:1.55
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "16687:16686"  # UI
       - "4319:4317"    # OTLP gRPC
@@ -107,7 +107,7 @@ services:
 
   minio:
     image: minio/minio:latest
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -124,7 +124,7 @@ services:
 
   auth:
     build: ./services/auth
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "8105:8105"
     environment:
@@ -145,7 +145,7 @@ services:
 
   jobs:
     build: ./services/jobs
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "8101:8101"
     environment:
@@ -166,7 +166,7 @@ services:
 
   ai-scoring:
     build: ./services/ai-scoring
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "8102:8102"
     environment:
@@ -187,7 +187,7 @@ services:
 
   client-intel:
     build: ./services/client-intel
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "8103:8103"
     environment:
@@ -206,7 +206,7 @@ services:
 
   letter-gen:
     build: ./services/letter-gen
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "8104:8104"
     environment:
@@ -228,7 +228,7 @@ services:
 
   analytics:
     build: ./services/analytics
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "8106:8106"
     environment:
@@ -255,7 +255,7 @@ services:
 
   frontend:
     build: ./frontend
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "3002:3000"
     environment:
